@@ -33,8 +33,7 @@ public:
 
   static
   std::shared_ptr<ArrayIndexer>
-  index_of(ArrayOrder order,
-           const std::vector<ColumnAxisBase<Columns> >& axes) {
+  of(ArrayOrder order, const std::vector<ColumnAxisBase<Columns> >& axes) {
     std::shared_ptr<ArrayFullIndexer<Columns> > result(
       new ArrayFullIndexer<Columns>(order, axes));
     result->set_self_reference(result);

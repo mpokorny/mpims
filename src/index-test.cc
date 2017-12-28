@@ -32,7 +32,7 @@ main(int argc, char* argv[]) {
 
   {
     std::cout << "*** row major order and traversal ***" << std::endl;
-    auto indexer = ArrayIndexer<MSColumns>::index_of(ArrayOrder::row_major, shape);
+    auto indexer = ArrayIndexer<MSColumns>::of(ArrayOrder::row_major, shape);
     for (unsigned t = 0; t < time_len; ++t) {
       std::unordered_map<MSColumns, size_t> index;
       index[MSColumns::time] = t;
@@ -104,7 +104,7 @@ main(int argc, char* argv[]) {
   }
   {
     std::cout << "*** column major order and traversal ***" << std::endl;
-    auto indexer = ArrayIndexer<MSColumns>::index_of(ArrayOrder::column_major, shape);
+    auto indexer = ArrayIndexer<MSColumns>::of(ArrayOrder::column_major, shape);
     for (unsigned pol = 0; pol < pol_len; ++pol) {
       std::unordered_map<MSColumns, size_t> index;
       index[MSColumns::polarization_product] = pol;
