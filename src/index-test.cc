@@ -49,6 +49,26 @@ main(int argc, char* argv[]) {
         }
       }
     }
+    std::cout << "---------------" << std::endl;
+
+    unordered_map<MSColumns, size_t> slice;
+    slice[MSColumns::spectral_window] = 1;
+    auto spw1 = indexer->slice(slice);
+    for (unsigned t = 0; t < time_len; ++t) {
+      std::unordered_map<MSColumns, size_t> index;
+      index[MSColumns::time] = t;
+      for (unsigned bal = 0; bal < bal_len; ++bal) {
+        index[MSColumns::baseline] = bal;
+        for (unsigned ch = 0; ch < ch_len; ++ch) {
+          index[MSColumns::channel] = ch;
+          for (unsigned pol = 0; pol < pol_len; ++pol) {
+            index[MSColumns::polarization_product] = pol;
+            std::cout << spw1->offset_of(index) << std::endl;
+          }
+        }
+      }
+    }
+    std::cout << "---------------" << std::endl;
   }
   {
     auto indexer = ArrayIndexer<MSColumns>::index_of(ArrayOrder::column_major, shape);
