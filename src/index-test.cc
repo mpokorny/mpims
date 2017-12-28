@@ -31,6 +31,7 @@ main(int argc, char* argv[]) {
       ColumnAxis<MSColumns, MSColumns::polarization_product>(pol_len)};
 
   {
+    std::cout << "*** row major order and traversal ***" << std::endl;
     auto indexer = ArrayIndexer<MSColumns>::index_of(ArrayOrder::row_major, shape);
     for (unsigned t = 0; t < time_len; ++t) {
       std::unordered_map<MSColumns, size_t> index;
@@ -51,6 +52,7 @@ main(int argc, char* argv[]) {
     }
     std::cout << "---------------" << std::endl;
 
+    std::cout << "*** row major order, slice of second spw ***" << std::endl;
     unordered_map<MSColumns, size_t> slice;
     slice[MSColumns::spectral_window] = 1;
     auto spw1 = indexer->slice(slice);
@@ -69,8 +71,39 @@ main(int argc, char* argv[]) {
       }
     }
     std::cout << "---------------" << std::endl;
+
+    std::cout << "*** row major order, slice of second spw & fourth channel ***" << std::endl;
+    unordered_map<MSColumns, size_t> slice1;
+    slice1[MSColumns::channel] = 3;
+    auto ch3 = spw1->slice(slice1);
+    for (unsigned t = 0; t < time_len; ++t) {
+      std::unordered_map<MSColumns, size_t> index;
+      index[MSColumns::time] = t;
+      for (unsigned bal = 0; bal < bal_len; ++bal) {
+        index[MSColumns::baseline] = bal;
+        for (unsigned pol = 0; pol < pol_len; ++pol) {
+          index[MSColumns::polarization_product] = pol;
+          std::cout << ch3->offset_of(index) << std::endl;
+        }
+      }
+    }
+    std::cout << "---------------" << std::endl;
+
+    std::cout << "*** previous slice, attempt all channels" << std::endl;
+    {
+      std::unordered_map<MSColumns, size_t> index;
+      index[MSColumns::time] = 0;
+      index[MSColumns::baseline] = 0;
+      index[MSColumns::polarization_product] = 0;
+      for (unsigned ch = 0; ch < ch_len; ++ch) {
+        index[MSColumns::channel] = ch;
+        std::cout << ch3 ->offset_of(index) << std::endl;
+      }
+    }
+    std::cout << "---------------" << std::endl;
   }
   {
+    std::cout << "*** column major order and traversal ***" << std::endl;
     auto indexer = ArrayIndexer<MSColumns>::index_of(ArrayOrder::column_major, shape);
     for (unsigned pol = 0; pol < pol_len; ++pol) {
       std::unordered_map<MSColumns, size_t> index;
