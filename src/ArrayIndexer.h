@@ -194,9 +194,8 @@ public:
   slice(const index& fixed)
     const override {
 
-    auto all_fixed = with_fixed(fixed);
     std::shared_ptr<ArraySliceIndexer<Columns> > result(
-      new ArraySliceIndexer(m_full, std::move(*all_fixed)));
+      new ArraySliceIndexer(m_full, std::move(*with_fixed(fixed))));
     return std::static_pointer_cast<ArrayIndexer<Columns> >(result);
   }
 
