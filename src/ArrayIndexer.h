@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <memory>
+#include <set>
+#include <stdexcept>
 #include <unordered_map>
 #include <vector>
 
@@ -24,9 +26,12 @@ class ArrayFullIndexer;
 template <typename Columns>
 class ArrayIndexer {
 public:
-  
+
   virtual std::size_t
   offset_of(const std::unordered_map<Columns, std::size_t>& index) const  = 0;
+
+  virtual std::size_t
+  offset_of_(const std::unordered_map<Columns, std::size_t>& index) const  = 0;
 
   virtual std::shared_ptr<ArrayIndexer>
   slice(const std::unordered_map<Columns, std::size_t>& fixed) const = 0;
@@ -53,6 +58,15 @@ public:
     ArrayOrder order,
     const std::vector<ColumnAxisBase<Columns> >& axes) {
 
+    std::for_each(
+      std::begin(axes),
+      std::end(axes),
+      [this](const ColumnAxisBase<Columns>& ax) {
+        return m_axis_ids.insert(ax.id());
+      });
+    if (axes.size() != m_axis_ids.size())
+      throw new std::domain_error("Non-unique column id(s) specified by axes");
+
     switch (order) {
     case ArrayOrder::row_major:
       std::for_each(
@@ -70,9 +84,34 @@ public:
     }
   }
 
+  bool
+  is_valid_index(const std::unordered_map<Columns, std::size_t>& index)
+    const {
+
+    std::set<Columns> cols;
+    std::for_each(
+      std::begin(index),
+      std::end(index),
+      [&cols](const std::pair<Columns, std::size_t>& ix) {
+        cols.insert(ix.first);
+      });
+    return std::equal(
+      std::begin(m_axis_ids), std::end(m_axis_ids), std::begin(cols));
+  }
+
   std::size_t
   offset_of(const std::unordered_map<Columns, std::size_t>& index)
     const override {
+
+    if (!is_valid_index(index))
+      throw new std::domain_error("Invalid index axes");
+
+    return offset_of_(index);
+  }
+
+  std::size_t
+  offset_of_(const std::unordered_map<Columns, std::size_t>& index)
+    const {
 
     auto axes = m_axes.cbegin();
     std::size_t result = index.at(axes->id());
@@ -107,6 +146,8 @@ protected:
 private:
 
   std::vector<ColumnAxisBase<Columns> > m_axes;
+
+  std::set<Columns> m_axis_ids;
 };
 
 template <typename Columns>
@@ -133,29 +174,23 @@ public:
   offset_of(const std::unordered_map<Columns, std::size_t>& index)
     const override {
 
-    std::unordered_map<Columns, std::size_t> ix(index);
-    std::for_each(
-      std::begin(m_fixed),
-      std::end(m_fixed),
-      [&ix](const std::pair<Columns, std::size_t>& f) mutable {
-        ix[f.first] = f.second;
-      });
-    return m_full->offset_of(ix);
+    return m_full->offset_of(*with_fixed(index));
+  }
+
+  std::size_t
+  offset_of_(const std::unordered_map<Columns, std::size_t>& index)
+    const override {
+
+    return m_full->offset_of_(*with_fixed(index));
   }
 
   std::shared_ptr<ArrayIndexer<Columns> >
   slice(const std::unordered_map<Columns, std::size_t>& fixed)
     const override {
-    std::unordered_map<Columns, std::size_t> all_fixed(fixed);
-    std::for_each(
-      std::begin(m_fixed),
-      std::end(m_fixed),
-      [&all_fixed](const std::pair<Columns, std::size_t>& f)
-      mutable {
-        all_fixed[f.first] = f.second;
-      });
+
+    auto all_fixed = with_fixed(fixed);
     std::shared_ptr<ArraySliceIndexer<Columns> > result(
-      new ArraySliceIndexer(m_full, std::move(all_fixed)));
+      new ArraySliceIndexer(m_full, std::move(*all_fixed)));
     return std::static_pointer_cast<ArrayIndexer<Columns> >(result);
   }
 
@@ -164,6 +199,20 @@ private:
   std::shared_ptr<ArrayFullIndexer<Columns> > m_full;
 
   std::unordered_map<Columns, std::size_t> m_fixed;
+
+  std::unique_ptr<std::unordered_map<Columns, std::size_t> >
+  with_fixed(const std::unordered_map<Columns, std::size_t>& index) const {
+
+    std::unique_ptr<std::unordered_map<Columns, std::size_t> > ix(
+      new std::unordered_map<Columns, std::size_t>(index));
+    std::for_each(
+      std::begin(m_fixed),
+      std::end(m_fixed),
+      [&ix](const std::pair<Columns, std::size_t>& f) mutable {
+        (*ix)[f.first] = f.second;
+      });
+    return ix;
+  }
 };
 
 } // end namespace mpims
