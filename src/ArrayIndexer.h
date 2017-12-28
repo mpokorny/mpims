@@ -27,14 +27,16 @@ template <typename Columns>
 class ArrayIndexer {
 public:
 
-  virtual std::size_t
-  offset_of(const std::unordered_map<Columns, std::size_t>& index) const  = 0;
+  typedef std::unordered_map<Columns, std::size_t> index;
 
   virtual std::size_t
-  offset_of_(const std::unordered_map<Columns, std::size_t>& index) const  = 0;
+  offset_of(const index&) const  = 0;
+
+  virtual std::size_t
+  offset_of_(const index&) const  = 0;
 
   virtual std::shared_ptr<ArrayIndexer>
-  slice(const std::unordered_map<Columns, std::size_t>& fixed) const = 0;
+  slice(const index& fixed) const = 0;
 
   static
   std::shared_ptr<ArrayIndexer>
@@ -53,6 +55,8 @@ class ArrayFullIndexer
   friend class ArrayIndexer<Columns>;
 
 public:
+
+  typedef typename ArrayIndexer<Columns>::index index;
 
   ArrayFullIndexer(
     ArrayOrder order,
@@ -85,48 +89,48 @@ public:
   }
 
   bool
-  is_valid_index(const std::unordered_map<Columns, std::size_t>& index)
+  is_valid_index(const index& ix)
     const {
 
     std::set<Columns> cols;
     std::for_each(
-      std::begin(index),
-      std::end(index),
-      [&cols](const std::pair<Columns, std::size_t>& ix) {
-        cols.insert(ix.first);
+      std::begin(ix),
+      std::end(ix),
+      [&cols](const std::pair<Columns, std::size_t>& i) {
+        cols.insert(i.first);
       });
     return std::equal(
       std::begin(m_axis_ids), std::end(m_axis_ids), std::begin(cols));
   }
 
   std::size_t
-  offset_of(const std::unordered_map<Columns, std::size_t>& index)
+  offset_of(const index& ix)
     const override {
 
-    if (!is_valid_index(index))
+    if (!is_valid_index(ix))
       throw new std::domain_error("Invalid index axes");
 
-    return offset_of_(index);
+    return offset_of_(ix);
   }
 
   std::size_t
-  offset_of_(const std::unordered_map<Columns, std::size_t>& index)
+  offset_of_(const index& ix)
     const {
 
     auto axes = m_axes.cbegin();
-    std::size_t result = index.at(axes->id());
+    std::size_t result = ix.at(axes->id());
     ++axes;
     std::for_each(
       axes,
       m_axes.cend(),
-      [&result, &index] (const ColumnAxisBase<Columns>& ax) mutable {
-        result = index.at(ax.id()) + ax.length() * result;
+      [&result, &ix] (const ColumnAxisBase<Columns>& ax) mutable {
+        result = ix.at(ax.id()) + ax.length() * result;
       });
     return result;
   }
 
   std::shared_ptr<ArrayIndexer<Columns> >
-  slice(const std::unordered_map<Columns, std::size_t>& fixed)
+  slice(const index& fixed)
     const override {
 
     std::shared_ptr<ArraySliceIndexer<Columns> > result(
@@ -156,36 +160,38 @@ class ArraySliceIndexer
 
 public:
 
+  typedef typename ArrayIndexer<Columns>::index index;
+
   ArraySliceIndexer(
     const std::shared_ptr<ArrayFullIndexer<Columns> >& full,
-    const std::unordered_map<Columns, std::size_t>& fixed)
+    const index& fixed)
     : m_full(full)
     , m_fixed(fixed) {
   }
 
   ArraySliceIndexer(
     const std::shared_ptr<ArrayFullIndexer<Columns> >& full,
-    std::unordered_map<Columns, std::size_t>&& fixed)
+    index&& fixed)
     : m_full(full)
     , m_fixed(std::move(fixed)) {
   }
 
   std::size_t
-  offset_of(const std::unordered_map<Columns, std::size_t>& index)
+  offset_of(const index& ix)
     const override {
 
-    return m_full->offset_of(*with_fixed(index));
+    return m_full->offset_of(*with_fixed(ix));
   }
 
   std::size_t
-  offset_of_(const std::unordered_map<Columns, std::size_t>& index)
+  offset_of_(const index& ix)
     const override {
 
-    return m_full->offset_of_(*with_fixed(index));
+    return m_full->offset_of_(*with_fixed(ix));
   }
 
   std::shared_ptr<ArrayIndexer<Columns> >
-  slice(const std::unordered_map<Columns, std::size_t>& fixed)
+  slice(const index& fixed)
     const override {
 
     auto all_fixed = with_fixed(fixed);
@@ -198,20 +204,20 @@ private:
 
   std::shared_ptr<ArrayFullIndexer<Columns> > m_full;
 
-  std::unordered_map<Columns, std::size_t> m_fixed;
+  index m_fixed;
 
-  std::unique_ptr<std::unordered_map<Columns, std::size_t> >
-  with_fixed(const std::unordered_map<Columns, std::size_t>& index) const {
+  std::unique_ptr<index>
+  with_fixed(const index& ix) const {
 
-    std::unique_ptr<std::unordered_map<Columns, std::size_t> > ix(
-      new std::unordered_map<Columns, std::size_t>(index));
+    std::unique_ptr<index> i(
+      new std::unordered_map<Columns, std::size_t>(ix));
     std::for_each(
       std::begin(m_fixed),
       std::end(m_fixed),
-      [&ix](const std::pair<Columns, std::size_t>& f) mutable {
-        (*ix)[f.first] = f.second;
+      [&i](const std::pair<Columns, std::size_t>& f) mutable {
+        (*i)[f.first] = f.second;
       });
-    return ix;
+    return i;
   }
 };
 
