@@ -69,20 +69,20 @@ public:
         return m_axis_ids.insert(ax.id());
       });
     if (axes.size() != m_axis_ids.size())
-      throw new std::domain_error("Non-unique column id(s) specified by axes");
+      throw std::domain_error("Non-unique column id(s) specified by axes");
 
     switch (order) {
     case ArrayOrder::row_major:
       std::for_each(
-        std::begin(axes),
-        std::end(axes),
+        axes.begin(),
+        axes.end(),
         [this](const ColumnAxisBase<Columns>& c) { m_axes.push_back(c); });
       break;
 
     case ArrayOrder::column_major:
       std::for_each(
-        std::rbegin(axes),
-        std::rend(axes),
+        axes.rbegin(),
+        axes.rend(),
         [this](const ColumnAxisBase<Columns>& c) { m_axes.push_back(c); });
       break;
     }
@@ -104,18 +104,16 @@ public:
   }
 
   std::size_t
-  offset_of(const index& ix)
-    const override {
+  offset_of(const index& ix) const override {
 
     if (!is_valid_index(ix))
-      throw new std::domain_error("Invalid index axes");
+      throw std::domain_error("Invalid index axes");
 
     return offset_of_(ix);
   }
 
   std::size_t
-  offset_of_(const index& ix)
-    const {
+  offset_of_(const index& ix) const {
 
     auto axes = m_axes.cbegin();
     std::size_t result = ix.at(axes->id());
@@ -177,22 +175,19 @@ public:
   }
 
   std::size_t
-  offset_of(const index& ix)
-    const override {
+  offset_of(const index& ix) const override {
 
     return m_full->offset_of(*with_fixed(ix));
   }
 
   std::size_t
-  offset_of_(const index& ix)
-    const override {
+  offset_of_(const index& ix) const override {
 
     return m_full->offset_of_(*with_fixed(ix));
   }
 
   std::shared_ptr<ArrayIndexer<Columns> >
-  slice(const index& fixed)
-    const override {
+  slice(const index& fixed) const override {
 
     std::shared_ptr<ArraySliceIndexer<Columns> > result(
       new ArraySliceIndexer(m_full, std::move(*with_fixed(fixed))));

@@ -56,6 +56,11 @@ public:
 
   ColumnAxis&
   operator=(ColumnAxis&& other) = delete;
+
+  ColumnAxis
+  set_length(std::size_t length) const {
+    return ColumnAxis(length);
+  }
 };
 
 } // end namespace mpims

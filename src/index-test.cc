@@ -2,17 +2,10 @@
 #include <iostream>
 
 #include <ArrayIndexer.h>
+#include <MSColumns.h>
 
 using namespace std;
 using namespace mpims;
-
-enum class MSColumns {
-  time,
-  spectral_window,
-  baseline,
-  channel,
-  polarization_product
-};
 
 int
 main(int argc, char* argv[]) {
