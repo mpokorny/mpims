@@ -206,7 +206,7 @@ Reader::init_outer_array_axis() {
         array_length * start_array->block_len * start_array->max_blocks;
   }
   if (start_array == m_iter_params.rbegin())
-    throw std::runtime_error("buffer too small");
+    throw std::runtime_error("maximum buffer size too small");
   --start_array;
 
   m_outer_array_axis = start_array->axis;
