@@ -2,6 +2,8 @@
 #ifndef PROCESS_DISTRIBUTION_H_
 #define PROCESS_DISTRIBUTION_H_
 
+#include <cstddef>
+
 namespace mpims {
 
 struct ProcessDistribution {
