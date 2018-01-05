@@ -5,6 +5,7 @@
 #include <iostream>
 #include <stack>
 #include <stdexcept>
+#include <unordered_set>
 
 #include <mpims.h>
 
@@ -29,6 +30,7 @@ Reader::Reader(
   , m_buffer_size(
     (max_buffer_size / sizeof(std::complex<float>))
     * sizeof(std::complex<float>))
+  , m_has_inner_fileview_axis(false)
   , m_fileview_datatype_predef(false)
   , m_fileview_datatype(MPI_DATATYPE_NULL)
   , m_ms_indexer(
@@ -279,31 +281,46 @@ void
 Reader::init_fileview() {
 
   // find innermost out-of-order traversal axis
+  m_has_inner_fileview_axis = false;
+  std::unordered_set<MSColumns> oooas;
   auto ms_axis = m_ms_shape.crbegin();
   auto ip = m_iter_params.crbegin();
-  while (ip != m_iter_params.crend()
-         && ip->axis == ms_axis->id()) {
+  while (!m_has_inner_fileview_axis && ms_axis != m_ms_shape.crend()) {
+    if (oooas.count(ip->axis) > 0) {
+      m_inner_fileview_axis = ip->axis;
+      m_has_inner_fileview_axis = true;
+    }
+    if (ms_axis->id() != ip->axis)
+      oooas.insert(ms_axis->id());
+    else
+      ++ip;
     ++ms_axis;
+  }
+  while (!m_has_inner_fileview_axis && ip != m_iter_params.crend()) {
+    if (oooas.count(ip->axis) > 0) {
+      m_inner_fileview_axis = ip->axis;
+      m_has_inner_fileview_axis = true;
+    }
     ++ip;
   }
-  if (ip == m_iter_params.crend())
-    ip = m_iter_params.crbegin();
-
   // fileview axis cannot be at a deeper level than m_outer_array_axis
-  while (ip->in_array)
-    ++ip;
-  m_inner_fileview_axis = ip->axis;
+  m_inner_fileview_axis = ms_axis->id();
+  // ++ip;
+  // while (ip != m_iter_params.crend()) {
+  //   if (ip->in_array)
+  //     m_inner_fileview_axis = ip->axis;
+  //   ++ip;
+  // }
 
   // build datatype for fileview
   m_fileview_datatype = MPI_CXX_FLOAT_COMPLEX;
   m_fileview_datatype_predef = true;
   ms_axis = m_ms_shape.crbegin();
-  auto ms_axis_id = ms_axis->id();
   ip = m_iter_params.crbegin();
   std::size_t stride = 1;
   while (ip->axis != m_inner_fileview_axis) {
     ::MPI_Datatype dt1 = m_fileview_datatype;
-    if (ms_axis_id == ip->axis) {
+    if (ms_axis->id() == ip->axis) {
       auto count = ip->block_len * ip->max_blocks;
       if (count > 1) {
         stride *= ip->stride;
@@ -324,7 +341,6 @@ Reader::init_fileview() {
       stride *= ms_axis->length();
     }
     ++ms_axis;
-    ms_axis_id = ms_axis->id();
   }
 
   if (!m_fileview_datatype_predef)
@@ -337,9 +353,11 @@ Reader::set_fileview(ArrayIndexer<MSColumns>::index& index) {
   // indices of inner array axes not required to be set by caller, set them to
   // zero
   auto ip = std::begin(m_iter_params);
-  while (ip->axis != m_inner_fileview_axis)
+  if (m_has_inner_fileview_axis) {
+    while (ip->axis != m_inner_fileview_axis)
+      ++ip;
     ++ip;
-  ++ip;
+  }
   while (ip != std::end(m_iter_params)) {
     index[ip->axis] = 0;
     ++ip;

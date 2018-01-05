@@ -72,6 +72,8 @@ private:
 
   MSColumns m_outer_array_axis;
 
+  bool m_has_inner_fileview_axis;
+
   MSColumns m_inner_fileview_axis;
 
   bool m_fileview_datatype_predef;
@@ -150,6 +152,8 @@ private:
     std::vector<IndexBlockSequence<MSColumns> > indexes =
       make_index_block_sequences();
     ArrayIndexer<MSColumns>::index data_index;
+    if (!m_has_inner_fileview_axis)
+      set_fileview(data_index);
     std::stack<AxisIter> axis_iters;
     axis_iters.emplace(m_iter_params[0], m_iter_params[0].max_blocks > 0);
     while (!(eof || axis_iters.empty())) {
@@ -159,7 +163,7 @@ private:
         const MSColumns& axis = axis_iter.m_params.axis;
         indexes[depth - 1].m_blocks[0].m_index = axis_iter.m_index;
         data_index[axis] = axis_iter.m_index;
-        if (axis == m_inner_fileview_axis)
+        if (m_has_inner_fileview_axis && axis == m_inner_fileview_axis)
           set_fileview(data_index);
         if (axis == m_outer_array_axis) {
           eof = true;
