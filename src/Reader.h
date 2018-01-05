@@ -43,7 +43,8 @@ public:
   template <typename F>
   void
   iterate(const F& callback) {
-    loop(callback);
+    if (m_comm != MPI_COMM_NULL)
+      loop(callback);
   }
 
 private:
