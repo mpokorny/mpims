@@ -69,7 +69,8 @@ checkit(
   size_t& n,
   vector<pair<MSColumns, size_t> >& coords,
   vector<IndexBlockSequence<MSColumns> >::const_iterator begin,
-  vector<IndexBlockSequence<MSColumns> >::const_iterator end)
+  vector<IndexBlockSequence<MSColumns> >::const_iterator end,
+  ostringstream& output)
   __attribute__((unused));
 
 bool
@@ -78,7 +79,8 @@ checkit(
   size_t& n,
   vector<pair<MSColumns, size_t> >& coords,
   vector<IndexBlockSequence<MSColumns> >::const_iterator begin,
-  vector<IndexBlockSequence<MSColumns> >::const_iterator end) {
+  vector<IndexBlockSequence<MSColumns> >::const_iterator end,
+  ostringstream& output) {
 
   auto next = begin;
   ++next;
@@ -87,7 +89,7 @@ checkit(
     for (auto& b : begin->m_blocks)
       for (size_t i = 0; i < b.m_length; ++i) {
         coords.emplace_back(begin->m_axis, b.m_index + i);
-        result = checkit(buffer, n, coords, next, end) && result;
+        result = checkit(buffer, n, coords, next, end, output) && result;
         coords.pop_back();
       }
   } else {
@@ -111,19 +113,19 @@ checkit(
             {MSColumns::channel, ch},
             {MSColumns::polarization_product, pol}
           };
-          std::cout << "error at ("
-                    << coords[0].second << ","
-                    << coords[1].second << ","
-                    << coords[2].second << ","
-                    << coords[3].second << ","
-                    << coords[4].second << "); "
-                    << "value: ("
-                    << value_map[coords[0].first] << ","
-                    << value_map[coords[1].first] << ","
-                    << value_map[coords[2].first] << ","
-                    << value_map[coords[3].first] << ","
-                    << value_map[coords[4].first] << ")"
-                    << std::endl;
+          output << "error at ("
+               << coords[0].second << ","
+               << coords[1].second << ","
+               << coords[2].second << ","
+               << coords[3].second << ","
+               << coords[4].second << "); "
+               << "value: ("
+               << value_map[coords[0].first] << ","
+               << value_map[coords[1].first] << ","
+               << value_map[coords[2].first] << ","
+               << value_map[coords[3].first] << ","
+               << value_map[coords[4].first] << ")"
+               << endl;
         }
         coords.pop_back();
       }
@@ -134,23 +136,26 @@ checkit(
 void
 cb(
   const vector<IndexBlockSequence<MSColumns> >& indexes,
-  shared_ptr<complex<float> >& buffer) {
+  shared_ptr<complex<float> >& buffer,
+  bool& result,
+  ostringstream& output) {
 
-  std::cout << "next buffer..." << std::endl;
+  output << "next buffer..." << endl;
   for (auto& seq : indexes) {
-    cout << mscol_nickname(seq.m_axis) << ": [";
+    output << mscol_nickname(seq.m_axis) << ": [";
     const char *sep = "";
     for (auto& block : seq.m_blocks) {
-      cout << sep << "(" << block.m_index << "," << block.m_length << ")";
+      output << sep << "(" << block.m_index << "," << block.m_length << ")";
       sep = ", ";
     }
-    cout << "]" << endl;
+    output << "]" << endl;
   }
 
   size_t n = 0;
   vector<pair<MSColumns, size_t> > coords;
-  if (checkit(buffer, n, coords, begin(indexes), end(indexes)))
-    std::cout << "no errors" << std::endl;
+  result = checkit(buffer, n, coords, begin(indexes), end(indexes), output);
+  if (result)
+    output << "no errors" << endl;
 }
 
 void
@@ -195,9 +200,9 @@ write_file(
   f.close();
 }
 
-std::string
-colnames(const std::vector<MSColumns>& cols) {
-  std::ostringstream result;
+string
+colnames(const vector<MSColumns>& cols) {
+  ostringstream result;
   result << "(";
   const char *sep = "";
   for (auto& c : cols) {
@@ -225,39 +230,52 @@ main(int argc, char* argv[]) {
       ColumnAxis<MSColumns, MSColumns::baseline>(nbal),
       ColumnAxis<MSColumns, MSColumns::channel>(nch),
       ColumnAxis<MSColumns, MSColumns::polarization_product>(npol)
-  };
+      };
 
   write_file(argv[1], ms_shape);
 
-  unordered_map<MSColumns, ProcessDistribution> pgrid;
   size_t max_buffer_size =
     ntim * nspw * nbal * nch * npol * sizeof(complex<float>);
 
   vector<size_t> buffer_sizes = {
-    max_buffer_size, max_buffer_size / ntim
+    max_buffer_size,
+    // max_buffer_size / ntim
   };
 
   vector<vector<MSColumns> > traversal_orders {
     {MSColumns::time, MSColumns::spectral_window, MSColumns::baseline,
         MSColumns::channel, MSColumns::polarization_product},
-    {MSColumns::spectral_window, MSColumns::time, MSColumns::baseline,
-        MSColumns::channel, MSColumns::polarization_product},
-    {MSColumns::channel, MSColumns::spectral_window,
-        MSColumns::time, MSColumns::baseline, MSColumns::polarization_product},
-    {MSColumns::polarization_product, MSColumns::spectral_window,
-        MSColumns::time, MSColumns::baseline, MSColumns::channel}
+      // {MSColumns::spectral_window, MSColumns::time, MSColumns::baseline,
+      //     MSColumns::channel, MSColumns::polarization_product},
+      // {MSColumns::channel, MSColumns::spectral_window,
+      //     MSColumns::time, MSColumns::baseline, MSColumns::polarization_product},
+      // {MSColumns::polarization_product, MSColumns::spectral_window,
+      //     MSColumns::time, MSColumns::baseline, MSColumns::channel}
+      };
+
+  // unordered_map<MSColumns, ProcessDistribution> pgrid;
+
+  unordered_map<MSColumns, ProcessDistribution> pgrid = {
+    {MSColumns::spectral_window, ProcessDistribution { 2, 1 } }
   };
 
-  for (std::size_t t = 0; t < traversal_orders.size(); ++t) {
+  int my_rank;
+  mpi_call(::MPI_Comm_rank, MPI_COMM_WORLD, &my_rank);
+  int world_size;
+  mpi_call(::MPI_Comm_size, MPI_COMM_WORLD, &world_size);
+
+  for (size_t t = 0; t < traversal_orders.size(); ++t) {
     vector<MSColumns>& traversal_order = traversal_orders[t];
-    for (std::size_t b = 0; b < buffer_sizes.size(); ++b) {
+    for (size_t b = 0; b < buffer_sizes.size(); ++b) {
+      ostringstream output;
       size_t buffer_size = buffer_sizes[b];
-      std::cout << "========= traversal_order "
-                << colnames(traversal_order)
-                << "; buffer_size "
-                << b
-                << " ========="
-                << std::endl;
+      output << "========= traversal_order "
+           << colnames(traversal_order)
+           << "; buffer_size "
+           << b
+           << " ========="
+           << endl;
+      bool result;
       Reader reader(
         argv[1],
         MPI_COMM_WORLD,
@@ -266,7 +284,26 @@ main(int argc, char* argv[]) {
         traversal_order,
         pgrid,
         buffer_size);
-      reader.iterate(cb);
+      reader.iterate(
+        [&result, &output]
+        (const vector<IndexBlockSequence<MSColumns> >& indexes,
+         shared_ptr<complex<float> >& buffer) {
+          cb(indexes, buffer, result, output);
+        });
+
+      int output_rank = 0;
+      while (output_rank < world_size) {
+        if (output_rank == my_rank) {
+          if (world_size > 1)
+            cout << "*************** rank "
+                 << my_rank
+                 << " ***************"
+                 << endl;
+          cout << output.str();
+        }
+        ++output_rank;
+        mpi_call(::MPI_Barrier, MPI_COMM_WORLD);
+      }
     }
   }
   ::MPI_Finalize();
