@@ -213,6 +213,11 @@ colnames(const vector<MSColumns>& cols) {
   return result.str();
 }
 
+std::size_t
+num_elements(std::size_t sz) {
+  return sz / sizeof(std::complex<float>);
+}
+
 int
 main(int argc, char* argv[]) {
 
@@ -239,18 +244,18 @@ main(int argc, char* argv[]) {
 
   vector<size_t> buffer_sizes = {
     max_buffer_size,
-    // max_buffer_size / ntim
+    max_buffer_size / ntim
   };
 
   vector<vector<MSColumns> > traversal_orders {
     {MSColumns::time, MSColumns::spectral_window, MSColumns::baseline,
         MSColumns::channel, MSColumns::polarization_product},
-      // {MSColumns::spectral_window, MSColumns::time, MSColumns::baseline,
-      //     MSColumns::channel, MSColumns::polarization_product},
-      // {MSColumns::channel, MSColumns::spectral_window,
-      //     MSColumns::time, MSColumns::baseline, MSColumns::polarization_product},
-      // {MSColumns::polarization_product, MSColumns::spectral_window,
-      //     MSColumns::time, MSColumns::baseline, MSColumns::channel}
+      {MSColumns::spectral_window, MSColumns::time, MSColumns::baseline,
+          MSColumns::channel, MSColumns::polarization_product},
+      {MSColumns::channel, MSColumns::spectral_window,
+          MSColumns::time, MSColumns::baseline, MSColumns::polarization_product},
+      {MSColumns::polarization_product, MSColumns::spectral_window,
+          MSColumns::time, MSColumns::baseline, MSColumns::channel}
       };
 
   // unordered_map<MSColumns, ProcessDistribution> pgrid;
@@ -270,11 +275,11 @@ main(int argc, char* argv[]) {
       ostringstream output;
       size_t buffer_size = buffer_sizes[b];
       output << "========= traversal_order "
-           << colnames(traversal_order)
-           << "; buffer_size "
-           << b
-           << " ========="
-           << endl;
+             << colnames(traversal_order)
+             << "; buffer_size "
+             << num_elements(buffer_size)
+             << " ========="
+             << endl;
       bool result;
       Reader reader(
         argv[1],
