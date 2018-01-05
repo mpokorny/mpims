@@ -89,10 +89,11 @@ Reader::Reader(
 
   init_iterparams(traversal_order, pgrid);
   init_outer_array_axis();
-  // std::cout << "m_outer_array_axis " << mscol_nickname(m_outer_array_axis) << std::endl;
   init_fileview();
-  // if (m_has_inner_fileview_axis)
-  //   std::cout << "m_inner_fileview_axis " << mscol_nickname(m_inner_fileview_axis) << std::endl;
+  adjust_outer_array_axis();
+  // std::cout << "m_outer_array_axis " << mscol_nickname(m_outer_array_axis) << std::endl;
+  // if (m_inner_fileview_axis)
+  //   std::cout << "m_inner_fileview_axis " << mscol_nickname(m_inner_fileview_axis.value()) << std::endl;
   // else
   //   std::cout << "no m_inner_fileview_axis" << std::endl;
   init_array_datatype();
@@ -187,7 +188,8 @@ Reader::init_iterparams(
       std::size_t stride = grid_len * block_len;
       std::size_t max_blocks = (length + stride - 1) / stride;
       m_iter_params[traversal_index] =
-        IterParams { col, false, length, origin, stride, block_len, max_blocks };
+        IterParams { col, false, num_processes > 1, length, origin, stride,
+                     block_len, max_blocks };
       dist_size *= grid_len;
     });
 }
@@ -305,6 +307,19 @@ Reader::init_fileview() {
       m_inner_fileview_axis = ip->axis;
     ++ip;
   }
+  // now move m_inner_fileview_axis inwards until it's not above any distributed
+  // axes
+  bool below_inner_fileview = !m_inner_fileview_axis.has_value();
+  auto ipf = std::begin(m_iter_params);
+  while (ipf != std::end(m_iter_params) && !below_inner_fileview) {
+    below_inner_fileview = ipf->axis == m_inner_fileview_axis.value();
+    ++ipf;
+  }
+  while (ipf != std::end(m_iter_params)) {
+    if (ipf->is_distributed)
+      m_inner_fileview_axis = ipf->axis;
+    ++ipf;
+  }
 
   // build datatype for fileview
   m_fileview_datatype = MPI_CXX_FLOAT_COMPLEX;
@@ -351,6 +366,28 @@ Reader::init_fileview() {
   }
   if (!m_fileview_datatype_predef)
     mpi_call(::MPI_Type_commit, &m_fileview_datatype);
+}
+
+void
+Reader::adjust_outer_array_axis() {
+  if (!m_inner_fileview_axis)
+    return;
+  MSColumns inner_fileview_axis = m_inner_fileview_axis.value();
+
+  auto ip = std::begin(m_iter_params);
+  while (ip != std::end(m_iter_params)
+         && ip->axis != m_outer_array_axis
+         && ip->axis != inner_fileview_axis)
+    ++ip;
+
+  while (ip != std::end(m_iter_params) && ip->axis != inner_fileview_axis) {
+    auto next = ip + 1;
+    if (next != std::end(m_iter_params)) {
+      ip->in_array = false;
+      m_outer_array_axis = next->axis;
+    }
+    ip = next;
+  }
 }
 
 void

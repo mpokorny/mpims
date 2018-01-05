@@ -65,7 +65,7 @@ private:
 
   struct IterParams {
     MSColumns axis;
-    bool in_array;
+    bool in_array, is_distributed;
     std::size_t length, origin, stride, block_len, max_blocks;
   };
 
@@ -87,7 +87,7 @@ private:
 
     AxisIter(const IterParams& params_, bool outer_at_data_)
       : params(params_)
-      , index(0)
+      , index(params_.origin)
       , at_data(params_.max_blocks > 0 && outer_at_data_)
       , outer_at_data(outer_at_data_)
       , at_end(params_.max_blocks == 0) {
@@ -134,6 +134,9 @@ private:
 
   void
   init_fileview();
+
+  void
+  adjust_outer_array_axis();
 
   void
   set_fileview(ArrayIndexer<MSColumns>::index& index);
