@@ -63,6 +63,7 @@ private:
 
   struct IterParams {
     MSColumns axis;
+    bool in_array;
     std::size_t length, origin, stride, block_len, max_blocks;
   };
 
@@ -72,6 +73,10 @@ private:
   MSColumns m_outer_array_axis;
 
   MSColumns m_inner_fileview_axis;
+
+  bool m_fileview_datatype_predef;
+
+  ::MPI_Datatype m_fileview_datatype;
 
   std::shared_ptr<ArrayIndexer<MSColumns> > m_ms_indexer;
 
@@ -126,10 +131,10 @@ private:
   init_array_datatype();
 
   void
-  init_inner_fileview_axis();
+  init_fileview();
 
   void
-  set_fileview(MSColumns outer, ArrayIndexer<MSColumns>::index& index);
+  set_fileview(ArrayIndexer<MSColumns>::index& index);
 
   std::vector<IndexBlockSequence<MSColumns> >
   make_index_block_sequences();
@@ -155,7 +160,7 @@ private:
         indexes[depth - 1].m_blocks[0].m_index = axis_iter.m_index;
         data_index[axis] = axis_iter.m_index;
         if (axis == m_inner_fileview_axis)
-          set_fileview(axis, data_index);
+          set_fileview(data_index);
         if (axis == m_outer_array_axis) {
           eof = true;
           std::shared_ptr<std::complex<float> > buffer;

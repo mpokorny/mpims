@@ -20,12 +20,12 @@ public:
     return m_length;
   }
 
-protected:
   ColumnAxisBase(unsigned col, std::size_t length)
     : m_col(col)
     , m_length(length) {
   }
 
+protected:
   unsigned m_col;
 
   std::size_t m_length;

@@ -3,6 +3,8 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include <mpi.h>
 
@@ -12,25 +14,27 @@
 
 using namespace mpims;
 
+using namespace std;
+
 constexpr auto ntim = 4;
 constexpr auto nbits_tim = 2;
 constexpr auto nspw = 2;
 constexpr auto nbits_spw = 1;
-constexpr auto nbal = 6;
+constexpr auto nbal = 3 /*6*/;
 constexpr auto nbits_bal = 3;
-constexpr auto nch = 8;
+constexpr auto nch = 2 /*8*/;
 constexpr auto nbits_ch = 3;
 constexpr auto npol = 2;
 constexpr auto nbits_pol = 1;
 
 void
 encode_vis(
-  std::complex<float>& vis,
-  std::size_t tim,
-  std::size_t spw,
-  std::size_t bal,
-  std::size_t ch,
-  std::size_t pol) {
+  complex<float>& vis,
+  size_t tim,
+  size_t spw,
+  size_t bal,
+  size_t ch,
+  size_t pol) {
 
   vis.real(static_cast<float>((((bal << nbits_spw) | spw) << nbits_tim) | tim));
   vis.imag(static_cast<float>((ch << nbits_pol) | pol));
@@ -38,12 +42,12 @@ encode_vis(
 
 void
 decode_vis(
-  const std::complex<float>& vis,
-  std::size_t& tim,
-  std::size_t& spw,
-  std::size_t& bal,
-  std::size_t& ch,
-  std::size_t& pol) {
+  const complex<float>& vis,
+  size_t& tim,
+  size_t& spw,
+  size_t& bal,
+  size_t& ch,
+  size_t& pol) {
 
   auto re = static_cast<unsigned>(vis.real());
   tim = re & ((1 << nbits_tim) - 1);
@@ -58,40 +62,114 @@ decode_vis(
   ch = im;
 }
 
+bool
+checkit(
+  const shared_ptr<complex<float> >& buffer,
+  size_t& n,
+  vector<pair<MSColumns, size_t> >& coords,
+  vector<IndexBlockSequence<MSColumns> >::const_iterator begin,
+  vector<IndexBlockSequence<MSColumns> >::const_iterator end)
+  __attribute__((unused));
+
+bool
+checkit(
+  const shared_ptr<complex<float> >& buffer,
+  size_t& n,
+  vector<pair<MSColumns, size_t> >& coords,
+  vector<IndexBlockSequence<MSColumns> >::const_iterator begin,
+  vector<IndexBlockSequence<MSColumns> >::const_iterator end) {
+
+  auto next = begin;
+  ++next;
+  bool result = true;
+  if (next != end) {
+    for (auto& b : begin->m_blocks)
+      for (size_t i = 0; i < b.m_length; ++i) {
+        coords.emplace_back(begin->m_axis, b.m_index + i);
+        result = checkit(buffer, n, coords, next, end) && result;
+        coords.pop_back();
+      }
+  } else {
+    for (auto& b : begin->m_blocks)
+      for (size_t i = 0; i < b.m_length; ++i) {
+        coords.emplace_back(begin->m_axis, b.m_index + i);
+        unordered_map<MSColumns, size_t> coords_map(
+          std::begin(coords), std::end(coords));
+        size_t tim, spw, bal, ch, pol;
+        decode_vis(buffer.get()[n++], tim, spw, bal, ch, pol);
+        if (coords_map[MSColumns::time] != tim
+            || coords_map[MSColumns::spectral_window] != spw
+            || coords_map[MSColumns::baseline] != bal
+            || coords_map[MSColumns::channel] != ch
+            || coords_map[MSColumns::polarization_product] != pol) {
+          result = false;
+          unordered_map<MSColumns, size_t> value_map {
+            {MSColumns::time, tim},
+            {MSColumns::spectral_window, spw},
+            {MSColumns::baseline, bal},
+            {MSColumns::channel, ch},
+            {MSColumns::polarization_product, pol}
+          };
+          std::cout << "error at ("
+                    << coords[0].second << ","
+                    << coords[1].second << ","
+                    << coords[2].second << ","
+                    << coords[3].second << ","
+                    << coords[4].second << "); "
+                    << "value: ("
+                    << value_map[coords[0].first] << ","
+                    << value_map[coords[1].first] << ","
+                    << value_map[coords[2].first] << ","
+                    << value_map[coords[3].first] << ","
+                    << value_map[coords[4].first] << ")"
+                    << std::endl;
+        }
+        coords.pop_back();
+      }
+  }
+  return result;
+}
+
 void
 cb(
-  const std::vector<IndexBlockSequence<MSColumns> >& indexes,
-  std::shared_ptr<std::complex<float> >& buffer) {
+  const vector<IndexBlockSequence<MSColumns> >& indexes,
+  shared_ptr<complex<float> >& buffer) {
 
+  std::cout << "next buffer..." << std::endl;
   for (auto& seq : indexes) {
-    std::cout << mscol_nickname(seq.m_axis) << ": [";
+    cout << mscol_nickname(seq.m_axis) << ": [";
     const char *sep = "";
     for (auto& block : seq.m_blocks) {
-      std::cout << sep << "(" << block.m_index << "," << block.m_length << ")";
+      cout << sep << "(" << block.m_index << "," << block.m_length << ")";
       sep = ", ";
     }
-    std::cout << "]" << std::endl;
+    cout << "]" << endl;
   }
+
+  size_t n = 0;
+  vector<pair<MSColumns, size_t> > coords;
+  if (checkit(buffer, n, coords, begin(indexes), end(indexes)))
+    std::cout << "no errors" << std::endl;
 }
 
 void
 writeit(
-  std::ofstream& f,
-  std::vector<ColumnAxisBase<MSColumns> >::const_iterator axis,
-  std::vector<ColumnAxisBase<MSColumns> >::const_iterator end_axis,
-  std::unordered_map<MSColumns, std::size_t>& index) {
+  ofstream& f,
+  vector<ColumnAxisBase<MSColumns> >::const_iterator axis,
+  vector<ColumnAxisBase<MSColumns> >::const_iterator end_axis,
+  unordered_map<MSColumns, size_t>& index) {
 
   auto next_axis = axis;
   ++next_axis;
   if (next_axis != end_axis) {
-    for (std::size_t i = 0; i < axis->length(); ++i) {
+    for (size_t i = 0; i < axis->length(); ++i) {
       index[axis->id()] = i;
       writeit(f, next_axis, end_axis, index);
     }
   } else {
-    for (std::size_t i = 0; i < axis->length(); ++i) {
+    for (size_t i = 0; i < axis->length(); ++i) {
       index[axis->id()] = i;
-      std::complex<float> vis;
+      complex<float> vis;
       encode_vis(
         vis,
         index[MSColumns::time],
@@ -99,7 +177,7 @@ writeit(
         index[MSColumns::baseline],
         index[MSColumns::channel],
         index[MSColumns::polarization_product]);
-      f << vis;
+      f.write(reinterpret_cast<char *>(&vis), sizeof(vis));
     }
   }
 }
@@ -107,14 +185,12 @@ writeit(
 void
 write_file(
   const char *path,
-  const std::vector<ColumnAxisBase<MSColumns> >& shape) {
+  const vector<ColumnAxisBase<MSColumns> >& shape) {
 
-  std::ofstream f(
-    path,
-    std::ofstream::out | std::ofstream::trunc | std::ofstream::binary);
+  ofstream f(path, ofstream::out | ofstream::trunc | ofstream::binary);
 
-  std::unordered_map<MSColumns, std::size_t> index;
-  writeit(f, std::begin(shape), std::end(shape), index);
+  unordered_map<MSColumns, size_t> index;
+  writeit(f, begin(shape), end(shape), index);
   f.close();
 }
 
@@ -122,30 +198,32 @@ int
 main(int argc, char* argv[]) {
 
   if (argc != 2) {
-    std::cerr << "usage: " << argv[0] << " <file>" << std::endl;
+    cerr << "usage: " << argv[0] << " <file>" << endl;
     return -1;
   }
 
   ::MPI_Init(&argc, &argv);
   ::MPI_Comm_set_errhandler(MPI_COMM_WORLD, MPI_ERRORS_RETURN);
 
-  std::vector<ColumnAxisBase<MSColumns> > ms_shape {
+  vector<ColumnAxisBase<MSColumns> > ms_shape {
     ColumnAxis<MSColumns, MSColumns::time>(ntim),
       ColumnAxis<MSColumns, MSColumns::spectral_window>(nspw),
       ColumnAxis<MSColumns, MSColumns::baseline>(nbal),
       ColumnAxis<MSColumns, MSColumns::channel>(nch),
       ColumnAxis<MSColumns, MSColumns::polarization_product>(npol)
   };
-  std::vector<MSColumns> traversal_order {
-    MSColumns::time, MSColumns::spectral_window, MSColumns::baseline,
-      MSColumns::channel, MSColumns::polarization_product
-  };
+  vector<MSColumns> traversal_order {
+    MSColumns::spectral_window, MSColumns::time, MSColumns::baseline,
+      MSColumns::channel, MSColumns::polarization_product};
+  // vector<MSColumns> traversal_order {
+  //   MSColumns::time, MSColumns::spectral_window, MSColumns::baseline,
+  //   MSColumns::channel, MSColumns::polarization_product};
 
   write_file(argv[1], ms_shape);
 
-  std::unordered_map<MSColumns, ProcessDistribution> pgrid;
-  std::size_t buffer_size =
-    ntim * nspw * nbal * nch * npol * sizeof(std::complex<float>);
+  unordered_map<MSColumns, ProcessDistribution> pgrid;
+  size_t buffer_size =
+    ntim * nspw * nbal * nch * npol * sizeof(complex<float>) / nspw;
 
   Reader reader(
     argv[1],
