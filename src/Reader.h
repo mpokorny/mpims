@@ -84,39 +84,39 @@ private:
   class AxisIter {
   public:
 
-    AxisIter(const IterParams& params, bool outer_at_data)
-      : m_params(params)
-      , m_index(0)
-      , m_at_data(params.max_blocks > 0 && outer_at_data)
-      , m_outer_at_data(outer_at_data)
-      , m_at_end(params.max_blocks == 0) {
+    AxisIter(const IterParams& params_, bool outer_at_data_)
+      : params(params_)
+      , index(0)
+      , at_data(params_.max_blocks > 0 && outer_at_data_)
+      , outer_at_data(outer_at_data_)
+      , at_end(params_.max_blocks == 0) {
     }
 
-    const IterParams& m_params;
-    std::size_t m_index;
-    bool m_at_data;
-    bool m_outer_at_data;
-    bool m_at_end;
+    const IterParams& params;
+    std::size_t index;
+    bool at_data;
+    bool outer_at_data;
+    bool at_end;
 
     void
     increment() {
-      if (!m_at_end) {
-        auto block = (m_index - m_params.origin) / m_params.stride;
-        auto block_origin = m_params.origin + block * m_params.stride;
-        ++m_index;
-        if (m_index - block_origin >= m_params.block_len) {
+      if (!at_end) {
+        auto block = (index - params.origin) / params.stride;
+        auto block_origin = params.origin + block * params.stride;
+        ++index;
+        if (index - block_origin >= params.block_len) {
           ++block;
-          m_index = m_params.origin + block * m_params.stride;
+          index = params.origin + block * params.stride;
         }
-        m_at_data = m_outer_at_data && m_index < m_params.length;
-        m_at_end = block == m_params.max_blocks;
+        at_data = outer_at_data && index < params.length;
+        at_end = block == params.max_blocks;
       }
     }
 
     void
     complete() {
-      m_at_data = false;
-      m_at_end = true;
+      at_data = false;
+      at_end = true;
     }
   };
 
@@ -158,16 +158,16 @@ private:
     while (!(eof || axis_iters.empty())) {
       auto depth = axis_iters.size();
       AxisIter& axis_iter = axis_iters.top();
-      if (!axis_iter.m_at_end) {
-        const MSColumns& axis = axis_iter.m_params.axis;
-        indexes[depth - 1].m_blocks[0].m_index = axis_iter.m_index;
-        data_index[axis] = axis_iter.m_index;
-        if (m_has_inner_fileview_axis && axis == m_inner_fileview_axis)
+      if (!axis_iter.at_end) {
+        const MSColumns& axis = axis_iter.params.axis;
+        indexes[depth - 1].m_blocks[0].m_index = axis_iter.index;
+        data_index[axis] = axis_iter.index;
+        if (m_inner_fileview_axis && axis == m_inner_fileview_axis.value())
           set_fileview(data_index);
         if (axis == m_outer_array_axis) {
           eof = true;
           std::shared_ptr<std::complex<float> > buffer;
-          if (axis_iter.m_at_data) {
+          if (axis_iter.at_data) {
             buffer = read_array();
             if (buffer) {
               callback(indexes, buffer);
@@ -185,7 +185,7 @@ private:
           axis_iter.complete();
         } else {
           const IterParams& next_params = m_iter_params[depth];
-          axis_iters.emplace(next_params, axis_iter.m_at_data);
+          axis_iters.emplace(next_params, axis_iter.at_data);
         }
       } else {
         axis_iters.pop();
