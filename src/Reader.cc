@@ -30,7 +30,6 @@ Reader::Reader(
   , m_buffer_size(
     (max_buffer_size / sizeof(std::complex<float>))
     * sizeof(std::complex<float>))
-  , m_has_inner_fileview_axis(false)
   , m_fileview_datatype_predef(false)
   , m_fileview_datatype(MPI_DATATYPE_NULL)
   , m_ms_indexer(
@@ -288,7 +287,6 @@ void
 Reader::init_fileview() {
 
   // find innermost out-of-order traversal axis
-  m_has_inner_fileview_axis = false;
   std::unordered_set<MSColumns> out_of_order;
   auto ms_axis = m_ms_shape.crbegin();
   auto ip = m_iter_params.crbegin();
@@ -300,20 +298,18 @@ Reader::init_fileview() {
     ++ms_axis;
   }
   ip = m_iter_params.crbegin();
-  while (!m_has_inner_fileview_axis && ip != m_iter_params.crend()) {
+  while (!m_inner_fileview_axis && ip != m_iter_params.crend()) {
     // select the innermost of the out of order traversal axes that is not among
     // the array axes
-    if (!ip->in_array && out_of_order.count(ip->axis) > 0) {
+    if (!ip->in_array && out_of_order.count(ip->axis) > 0)
       m_inner_fileview_axis = ip->axis;
-      m_has_inner_fileview_axis = true;
-    }
     ++ip;
   }
 
   // build datatype for fileview
   m_fileview_datatype = MPI_CXX_FLOAT_COMPLEX;
   m_fileview_datatype_predef = true;
-  if (m_has_inner_fileview_axis) {
+  if (m_inner_fileview_axis) {
 
     ArrayIndexer<MSColumns>::index index;
     std::for_each(
@@ -325,7 +321,7 @@ Reader::init_fileview() {
 
     ms_axis = m_ms_shape.crbegin();
     ip = m_iter_params.crbegin();
-    while (ip->axis != m_inner_fileview_axis) {
+    while (ip->axis != m_inner_fileview_axis.value()) {
       auto ms_axis_id = ms_axis->id();
       ::MPI_Datatype dt1 = m_fileview_datatype;
       if (ms_axis_id == ip->axis) {
@@ -361,14 +357,14 @@ void
 Reader::set_fileview(ArrayIndexer<MSColumns>::index& index) {
   // indices of inner array axes not required to be set by caller, set them to
   // zero
-  bool fileview_axis = m_has_inner_fileview_axis;
+  bool fileview_axis = m_inner_fileview_axis.has_value();
   std::for_each(
     std::begin(m_iter_params),
     std::end(m_iter_params),
     [this, &fileview_axis, &index](const IterParams& ip) mutable {
       if (!fileview_axis)
         index[ip.axis] = 0;
-      else if (ip.axis == m_inner_fileview_axis)
+      else if (ip.axis == m_inner_fileview_axis.value())
         fileview_axis = false;
     });
 

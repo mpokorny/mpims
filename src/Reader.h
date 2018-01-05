@@ -7,6 +7,7 @@
 #include <complex>
 #include <stack>
 #include <string>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -72,9 +73,7 @@ private:
 
   MSColumns m_outer_array_axis;
 
-  bool m_has_inner_fileview_axis;
-
-  MSColumns m_inner_fileview_axis;
+  std::optional<MSColumns> m_inner_fileview_axis;
 
   bool m_fileview_datatype_predef;
 
@@ -152,7 +151,7 @@ private:
     std::vector<IndexBlockSequence<MSColumns> > indexes =
       make_index_block_sequences();
     ArrayIndexer<MSColumns>::index data_index;
-    if (!m_has_inner_fileview_axis)
+    if (!m_inner_fileview_axis)
       set_fileview(data_index);
     std::stack<AxisIter> axis_iters;
     axis_iters.emplace(m_iter_params[0], m_iter_params[0].max_blocks > 0);
