@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -194,6 +195,19 @@ write_file(
   f.close();
 }
 
+std::string
+colnames(const std::vector<MSColumns>& cols) {
+  std::ostringstream result;
+  result << "(";
+  const char *sep = "";
+  for (auto& c : cols) {
+    result << sep << mscol_nickname(c);
+    sep = ",";
+  }
+  result << ")";
+  return result.str();
+}
+
 int
 main(int argc, char* argv[]) {
 
@@ -212,29 +226,49 @@ main(int argc, char* argv[]) {
       ColumnAxis<MSColumns, MSColumns::channel>(nch),
       ColumnAxis<MSColumns, MSColumns::polarization_product>(npol)
   };
-  vector<MSColumns> traversal_order {
-    MSColumns::spectral_window, MSColumns::time, MSColumns::baseline,
-      MSColumns::channel, MSColumns::polarization_product};
-  // vector<MSColumns> traversal_order {
-  //   MSColumns::time, MSColumns::spectral_window, MSColumns::baseline,
-  //   MSColumns::channel, MSColumns::polarization_product};
 
   write_file(argv[1], ms_shape);
 
   unordered_map<MSColumns, ProcessDistribution> pgrid;
-  size_t buffer_size =
-    ntim * nspw * nbal * nch * npol * sizeof(complex<float>) / nspw;
+  size_t max_buffer_size =
+    ntim * nspw * nbal * nch * npol * sizeof(complex<float>);
 
-  Reader reader(
-    argv[1],
-    MPI_COMM_WORLD,
-    MPI_INFO_NULL,
-    ms_shape,
-    traversal_order,
-    pgrid,
-    buffer_size);
-  reader.iterate(cb);
-  reader.finalize();
+  vector<size_t> buffer_sizes = {
+    max_buffer_size, max_buffer_size / ntim
+  };
+
+  vector<vector<MSColumns> > traversal_orders {
+    {MSColumns::time, MSColumns::spectral_window, MSColumns::baseline,
+        MSColumns::channel, MSColumns::polarization_product},
+    {MSColumns::spectral_window, MSColumns::time, MSColumns::baseline,
+        MSColumns::channel, MSColumns::polarization_product},
+    {MSColumns::channel, MSColumns::spectral_window,
+        MSColumns::time, MSColumns::baseline, MSColumns::polarization_product},
+    {MSColumns::polarization_product, MSColumns::spectral_window,
+        MSColumns::time, MSColumns::baseline, MSColumns::channel}
+  };
+
+  for (std::size_t t = 0; t < traversal_orders.size(); ++t) {
+    vector<MSColumns>& traversal_order = traversal_orders[t];
+    for (std::size_t b = 0; b < buffer_sizes.size(); ++b) {
+      size_t buffer_size = buffer_sizes[b];
+      std::cout << "========= traversal_order "
+                << colnames(traversal_order)
+                << "; buffer_size "
+                << b
+                << " ========="
+                << std::endl;
+      Reader reader(
+        argv[1],
+        MPI_COMM_WORLD,
+        MPI_INFO_NULL,
+        ms_shape,
+        traversal_order,
+        pgrid,
+        buffer_size);
+      reader.iterate(cb);
+    }
+  }
   ::MPI_Finalize();
 
   return 0;
