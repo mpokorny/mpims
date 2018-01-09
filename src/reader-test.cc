@@ -291,7 +291,8 @@ main(int argc, char* argv[]) {
         ms_shape,
         traversal_order,
         pgrid,
-        buffer_size);
+        buffer_size
+        /* , true */);
       reader.iterate(
         [&result, &output]
         (const vector<IndexBlockSequence<MSColumns> >& indexes,

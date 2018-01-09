@@ -31,7 +31,8 @@ public:
     const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
     const std::vector<MSColumns>& traversal_order,
     std::unordered_map<MSColumns, ProcessDistribution>& pgrid,
-    std::size_t max_buffer_size);
+    std::size_t max_buffer_size,
+    bool debug_log = false);
 
   virtual ~Reader() {
     finalize();
@@ -81,6 +82,8 @@ private:
   ::MPI_Datatype m_fileview_datatype;
 
   std::shared_ptr<ArrayIndexer<MSColumns> > m_ms_indexer;
+
+  bool m_debug_log;
 
   class AxisIter {
   public:
@@ -172,6 +175,20 @@ private:
         if (m_inner_fileview_axis && axis == m_inner_fileview_axis.value())
           set_fileview(data_index);
         if (axis_iter.params.in_array) {
+
+          if (m_debug_log) {
+            std::ostringstream oss;
+            oss << "(" << m_rank << ") read";
+            std::for_each(
+              std::begin(m_iter_params),
+              std::end(m_iter_params),
+              [&data_index, &oss](const IterParams& ip) {
+                oss << "; " << mscol_nickname(ip.axis) << " " << data_index[ip.axis];
+              });
+            oss << std::endl;
+            std::clog << oss.str();
+          }
+
           eof = true;
           std::shared_ptr<std::complex<float> > buffer;
           if (axis_iter.at_data) {

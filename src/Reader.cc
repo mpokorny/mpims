@@ -21,7 +21,8 @@ Reader::Reader(
   const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
   const std::vector<MSColumns>& traversal_order,
   std::unordered_map<MSColumns, ProcessDistribution>& pgrid,
-  std::size_t max_buffer_size)
+  std::size_t max_buffer_size,
+  bool debug_log)
   : m_ms_shape(ms_shape)
   , m_comm(MPI_COMM_NULL)
   , m_file(MPI_FILE_NULL)
@@ -33,7 +34,8 @@ Reader::Reader(
   , m_fileview_datatype_predef(false)
   , m_fileview_datatype(MPI_DATATYPE_NULL)
   , m_ms_indexer(
-    ArrayIndexer<MSColumns>::of(ArrayOrder::row_major, m_ms_shape)) {
+    ArrayIndexer<MSColumns>::of(ArrayOrder::row_major, m_ms_shape))
+  , m_debug_log(debug_log) {
 
   // reduce process grid for small (blocked) axis sizes
   for (auto& pg : pgrid) {
@@ -89,13 +91,17 @@ Reader::Reader(
 
   init_iterparams(traversal_order, pgrid);
   init_traversal_partitions();
+  if (m_debug_log) {
+    auto ip = std::begin(m_iter_params);
+    while (!ip->in_array) ++ip;
+    std::clog << "outer array axis " << mscol_nickname(ip->axis) << std::endl;
+    if (m_inner_fileview_axis)
+      std::clog << "m_inner_fileview_axis "
+                << mscol_nickname(m_inner_fileview_axis.value()) << std::endl;
+    else
+      std::clog << "no m_inner_fileview_axis" << std::endl;
+  }
   init_fileview();
-  adjust_outer_array_axis();
-  // std::cout << "m_outer_array_axis " << mscol_nickname(m_outer_array_axis) << std::endl;
-  // if (m_inner_fileview_axis)
-  //   std::cout << "m_inner_fileview_axis " << mscol_nickname(m_inner_fileview_axis.value()) << std::endl;
-  // else
-  //   std::cout << "no m_inner_fileview_axis" << std::endl;
   init_array_datatype();
 
   mpi_call(
@@ -189,6 +195,16 @@ Reader::init_iterparams(
       std::size_t max_blocks = (length + stride - 1) / stride;
       m_iter_params[traversal_index] =
         IterParams { col, false, true, length, origin, stride, block_len, max_blocks };
+      if (m_debug_log) {
+        std::clog << "(" << m_rank << ") "
+                  << mscol_nickname(col)
+                  << " length: " << m_iter_params[traversal_index].length
+                  << ", origin: " << m_iter_params[traversal_index].origin
+                  << ", stride: " << m_iter_params[traversal_index].stride
+                  << ", block_len: " << m_iter_params[traversal_index].block_len
+                  << ", max_blocks: " << m_iter_params[traversal_index].max_blocks
+                  << std::endl;
+      }
       dist_size *= grid_len;
     });
 }
@@ -298,6 +314,12 @@ Reader::init_array_datatype() {
           ++index[ax_id];
           auto i1 = array_indexer->offset_of_(index);
           --index[ax_id];
+          if (m_debug_log) {
+            std::clog << "(" << m_rank << ") "
+                      << mscol_nickname(ip->axis)
+                      << " dv stride " << i1 - i0
+                      << std::endl;
+          }
           auto stride = (i1 - i0) * sizeof(std::complex<float>);
           ::MPI_Datatype dt = m_array_datatype;
           mpi_call(
@@ -400,10 +422,19 @@ Reader::init_fileview() {
 
 void
 Reader::set_fileview(ArrayIndexer<MSColumns>::index& index) {
-  std::for_each(
-    std::begin(m_iter_params),
-    std::end(m_iter_params),
-    });
+  std::size_t offset = m_ms_indexer->offset_of_(index);
+  if (m_debug_log) {
+    std::ostringstream oss;
+    oss << "(" << m_rank << ") fv offset " << offset;
+    std::for_each(
+      std::begin(m_iter_params),
+      std::end(m_iter_params),
+      [&index, &oss](const IterParams& ip) {
+        oss << "; " << mscol_nickname(ip.axis) << " " << index[ip.axis];
+      });
+    oss << std::endl;
+    std::clog << oss.str();
+  }
   mpi_call(
     ::MPI_File_set_view,
     m_file,
