@@ -198,11 +198,17 @@ Reader::init_iterparams(
       std::size_t terminal_block_len;
       std::size_t max_terminal_block_len;
       if (blocked_rem == 0) {
-        max_terminal_block_len = block_len;
         terminal_block_len = block_len;
-      } else {
+        max_terminal_block_len = block_len;
+      } else if (blocked_rem == 1) {
+        terminal_block_len = ((order == 0) ? (length % block_len) : 0);
         max_terminal_block_len = length % block_len;
-        terminal_block_len = ((order < blocked_rem) ? (length % block_len) : 0);
+      } else {
+        terminal_block_len =
+          ((order < blocked_rem - 1)
+           ? block_len
+           : ((order == blocked_rem - 1) ? (length % block_len) : 0));
+        max_terminal_block_len = block_len;
       }
       m_iter_params[traversal_index] =
         IterParams { col, false, true, length, origin, stride, block_len,

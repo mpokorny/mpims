@@ -264,7 +264,7 @@ main(int argc, char* argv[]) {
 
   unordered_map<MSColumns, ProcessDistribution> pgrid = {
     {MSColumns::spectral_window, ProcessDistribution { 2, 1 } },
-    {MSColumns::channel, ProcessDistribution { 2, 2 } }
+    {MSColumns::channel, ProcessDistribution { 2, 3 } }
   };
 
   int my_rank;
