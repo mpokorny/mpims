@@ -193,16 +193,37 @@ Reader::init_iterparams(
       std::size_t origin = order * block_len;
       std::size_t stride = grid_len * block_len;
       std::size_t max_blocks = (length + stride - 1) / stride;
+      std::size_t blocked_rem =
+        ((length + block_len - 1) / block_len) % grid_len;
+      std::size_t terminal_block_len;
+      std::size_t max_terminal_block_len;
+      if (blocked_rem == 0) {
+        max_terminal_block_len = block_len;
+        terminal_block_len = block_len;
+      } else {
+        max_terminal_block_len = length % block_len;
+        terminal_block_len = ((order < blocked_rem) ? (length % block_len) : 0);
+      }
       m_iter_params[traversal_index] =
-        IterParams { col, false, true, length, origin, stride, block_len, max_blocks };
+        IterParams { col, false, true, length, origin, stride, block_len,
+                     max_blocks, terminal_block_len, max_terminal_block_len };
       if (m_debug_log) {
         std::clog << "(" << m_rank << ") "
                   << mscol_nickname(col)
-                  << " length: " << m_iter_params[traversal_index].length
-                  << ", origin: " << m_iter_params[traversal_index].origin
-                  << ", stride: " << m_iter_params[traversal_index].stride
-                  << ", block_len: " << m_iter_params[traversal_index].block_len
-                  << ", max_blocks: " << m_iter_params[traversal_index].max_blocks
+                  << " length: "
+                  << m_iter_params[traversal_index].length
+                  << ", origin: "
+                  << m_iter_params[traversal_index].origin
+                  << ", stride: "
+                  << m_iter_params[traversal_index].stride
+                  << ", block_len: "
+                  << m_iter_params[traversal_index].block_len
+                  << ", max_blocks: "
+                  << m_iter_params[traversal_index].max_blocks
+                  << ", terminal_block_len: "
+                  << m_iter_params[traversal_index].terminal_block_len
+                  << ", max_terminal_block_len: "
+                  << m_iter_params[traversal_index].max_terminal_block_len
                   << std::endl;
       }
       dist_size *= grid_len;
@@ -288,7 +309,7 @@ Reader::init_array_datatype() {
       if (ip.in_array)
         array.emplace_back(
           static_cast<unsigned>(ip.axis),
-          ip.block_len * ip.max_blocks);
+          ip.block_len * (ip.max_blocks - 1) + ip.terminal_block_len);
     });
   auto array_indexer =
     ArrayIndexer<MSColumns>::of(ArrayOrder::row_major, array);
@@ -308,7 +329,8 @@ Reader::init_array_datatype() {
             return ip.axis == ax_id;
           });
       if (ip->in_array) {
-        auto count = ip->block_len * ip->max_blocks;
+        auto count =
+          ip->block_len * (ip->max_blocks - 1) + ip->terminal_block_len;
         if (count > 1) {
           auto i0 = array_indexer->offset_of_(index);
           ++index[ax_id];
@@ -400,14 +422,48 @@ Reader::init_fileview() {
         auto is = m_ms_indexer->offset_of_(index);
         index[ip->axis] -= ip->stride;
         auto stride = (is - i0) * sizeof(std::complex<float>);
-        // TODO: handle case where ip->length % ip->block_len != 0
-        mpi_call(
-          ::MPI_Type_create_hvector,
-          ip->max_blocks,
-          ip->block_len,
-          stride,
-          dt1,
-          &m_fileview_datatype);
+        if (ip->terminal_block_len == ip->block_len) {
+          // sizes all block sizes are the same
+          mpi_call(
+            ::MPI_Type_create_hvector,
+            ip->max_blocks,
+            ip->block_len,
+            stride,
+            dt1,
+            &m_fileview_datatype);
+        } else {
+          // first ip->max_blocks - 1 blocks have one size, the last
+          // block has a different size
+          assert(ip->max_blocks > 1);
+          ::MPI_Datatype dt2;
+          mpi_call(
+            ::MPI_Type_create_hvector,
+            ip->max_blocks - 1,
+            ip->block_len,
+            stride,
+            dt1,
+            &dt2);
+          ::MPI_Datatype dt3;
+          mpi_call(
+            ::MPI_Type_contiguous,
+            ip->terminal_block_len,
+            dt1,
+            &dt3);
+          auto terminal_displacement = stride * (ip->max_blocks - 1);
+          std::vector<int> blocklengths {1, 1};
+          std::vector<MPI_Aint> displacements {
+            0, static_cast<MPI_Aint>(terminal_displacement)};
+          std::vector<MPI_Datatype> types {dt2, dt3};
+          mpi_call(
+            ::MPI_Type_create_struct,
+            2,
+            blocklengths.data(),
+            displacements.data(),
+            types.data(),
+            &m_fileview_datatype);
+          mpi_call(::MPI_Type_free, &dt2);
+          mpi_call(::MPI_Type_free, &dt3);
+        }
         if (!m_fileview_datatype_predef)
           mpi_call(::MPI_Type_free, &dt1);
         m_fileview_datatype_predef = false;
@@ -451,7 +507,7 @@ Reader::make_index_block_sequences() {
   std::for_each(
     std::begin(m_iter_params),
     std::end(m_iter_params),
-    [this, &result](const IterParams& ip) mutable {
+    [this, &result](const IterParams& ip) {
       std::vector<IndexBlock> blocks;
       if (ip.in_array) {
         // merge gap-less consecutive blocks
@@ -465,6 +521,7 @@ Reader::make_index_block_sequences() {
           }
           end = s + ip.block_len;
         }
+        end = end - ip.block_len + ip.terminal_block_len;
         blocks.emplace_back(start, end - start);
       } else {
         blocks.emplace_back(ip.origin, 1);
@@ -475,18 +532,24 @@ Reader::make_index_block_sequences() {
 }
 
 std::shared_ptr<std::complex<float> >
-Reader::read_array() {
-  std::shared_ptr<std::complex<float> > result(
-    reinterpret_cast<std::complex<float> *>(::operator new(m_buffer_size)));
+Reader::read_array(bool at_data) {
+  std::shared_ptr<std::complex<float> > result;
+  int count;
+  if (at_data) {
+    result.reset(
+      reinterpret_cast<std::complex<float> *>(::operator new(m_buffer_size)));
+    count = 1;
+  } else {
+    count = 0;
+  }
   ::MPI_Status status;
   mpi_call(
     ::MPI_File_read_all,
     m_file,
     result.get(),
-    1,
+    count,
     m_array_datatype,
     &status);
-  int count;
   mpi_call(::MPI_Get_count, &status, m_array_datatype, &count);
   if (count == 0)
     result.reset();

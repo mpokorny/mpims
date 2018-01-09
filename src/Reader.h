@@ -67,7 +67,8 @@ private:
   struct IterParams {
     MSColumns axis;
     bool in_array, within_fileview;
-    std::size_t length, origin, stride, block_len, max_blocks;
+    std::size_t length, origin, stride, block_len, max_blocks,
+      terminal_block_len, max_terminal_block_len;
   };
 
   // ms array iteration definition, for this rank, in traversal order
@@ -98,6 +99,7 @@ private:
 
     const IterParams& params;
     std::size_t index;
+    std::size_t block;
     bool at_data;
     bool outer_at_data;
     bool at_end;
@@ -105,15 +107,24 @@ private:
     void
     increment() {
       if (!at_end) {
-        auto block = index / params.stride;
+        block = index / params.stride;
         auto block_origin = params.origin + block * params.stride;
+        bool terminal_block = block == params.max_blocks - 1;
+        auto block_len =
+          (terminal_block ? params.terminal_block_len : params.block_len);
         ++index;
-        if (index - block_origin >= params.block_len) {
+        if (!terminal_block && index - block_origin >= block_len) {
           ++block;
           index = params.origin + block * params.stride;
+          block_origin = params.origin + block * params.stride;
+          terminal_block = block == params.max_blocks - 1;
+          block_len =
+            (terminal_block ? params.terminal_block_len : params.block_len);
         }
-        at_data = outer_at_data && index < params.length;
-        at_end = block == params.max_blocks;
+        at_data = outer_at_data && (index - block_origin < block_len);
+        at_end =
+          terminal_block
+          && (index - block_origin == params.max_terminal_block_len);
       }
     }
 
@@ -145,7 +156,7 @@ private:
   make_index_block_sequences();
 
   std::shared_ptr<std::complex<float> >
-  read_array();
+  read_array(bool at_data);
 
   template <typename F>
   void
@@ -190,13 +201,11 @@ private:
           }
 
           eof = true;
-          std::shared_ptr<std::complex<float> > buffer;
-          if (axis_iter.at_data) {
-            buffer = read_array();
-            if (buffer) {
-              callback(indexes, buffer);
-              eof = false;
-            }
+          std::shared_ptr<std::complex<float> > buffer(
+            read_array(axis_iter.at_data));
+          if (buffer) {
+            callback(indexes, buffer);
+            eof = false;
           }
           mpi_call(
             ::MPI_Allreduce,

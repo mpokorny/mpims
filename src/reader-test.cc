@@ -23,8 +23,8 @@ constexpr auto nspw = 4;
 constexpr auto nbits_spw = 2;
 constexpr auto nbal = 3 /*6*/;
 constexpr auto nbits_bal = 3;
-constexpr auto nch = 8;
-constexpr auto nbits_ch = 3;
+constexpr auto nch = 13;
+constexpr auto nbits_ch = 4;
 constexpr auto npol = 2;
 constexpr auto nbits_pol = 1;
 
