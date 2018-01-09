@@ -4,6 +4,7 @@
 
 #include <mpi.h>
 
+#include <array>
 #include <complex>
 #include <stack>
 #include <string>
@@ -169,6 +170,7 @@ private:
   loop(const F& callback) {
 
     bool eof = false;
+    bool cont = true;
     std::vector<IndexBlockSequence<MSColumns> > indexes =
       make_index_block_sequences();
     ArrayIndexer<MSColumns>::index data_index;
@@ -182,7 +184,7 @@ private:
       set_fileview(data_index);
     std::stack<AxisIter> axis_iters;
     axis_iters.emplace(m_iter_params[0], m_iter_params[0].max_blocks > 0);
-    while (!(eof || axis_iters.empty())) {
+    while (cont && !(eof || axis_iters.empty())) {
       auto depth = axis_iters.size();
       AxisIter& axis_iter = axis_iters.top();
       const MSColumns& axis = axis_iter.params.axis;
@@ -206,21 +208,26 @@ private:
             std::clog << oss.str();
           }
 
-          eof = true;
           std::shared_ptr<std::complex<float> > buffer(
             read_array(axis_iter.at_data));
           if (buffer) {
-            callback(indexes, buffer);
+            cont = callback(indexes, buffer);
             eof = false;
+          } else {
+            cont = true;
+            eof = true;
           }
+          std::array<bool, 2> tests { cont, eof };
           mpi_call(
             ::MPI_Allreduce,
             MPI_IN_PLACE,
-            &eof,
-            1,
+            tests.data(),
+            tests.size(),
             MPI_CXX_BOOL,
             MPI_LAND,
             m_comm);
+          cont = tests[0];
+          eof = tests[1];
           axis_iter.complete();
         } else {
           const IterParams& next_params = m_iter_params[depth];

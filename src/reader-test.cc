@@ -133,7 +133,7 @@ checkit(
   return result;
 }
 
-void
+bool
 cb(
   const vector<IndexBlockSequence<MSColumns> >& indexes,
   shared_ptr<complex<float> >& buffer,
@@ -156,6 +156,7 @@ cb(
   result = checkit(buffer, n, coords, begin(indexes), end(indexes), output);
   if (result)
     output << "no errors" << endl;
+  return true;
 }
 
 void
@@ -296,8 +297,8 @@ main(int argc, char* argv[]) {
       reader.iterate(
         [&result, &output]
         (const vector<IndexBlockSequence<MSColumns> >& indexes,
-         shared_ptr<complex<float> >& buffer) {
-          cb(indexes, buffer, result, output);
+         shared_ptr<complex<float> >& buffer) -> bool {
+          return cb(indexes, buffer, result, output);
         });
 
       int output_rank = 0;
