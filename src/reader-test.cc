@@ -256,14 +256,14 @@ main(int argc, char* argv[]) {
         MSColumns::channel, MSColumns::polarization_product},
     {MSColumns::channel, MSColumns::spectral_window,
         MSColumns::time, MSColumns::baseline, MSColumns::polarization_product},
-    // {MSColumns::polarization_product, MSColumns::spectral_window,
-    //     MSColumns::time, MSColumns::baseline, MSColumns::channel}
+    {MSColumns::polarization_product, MSColumns::spectral_window,
+        MSColumns::time, MSColumns::baseline, MSColumns::channel}
   };
 
   // unordered_map<MSColumns, ProcessDistribution> pgrid;
 
   unordered_map<MSColumns, ProcessDistribution> pgrid = {
-    {MSColumns::spectral_window, ProcessDistribution { 2, 2 } },
+    {MSColumns::spectral_window, ProcessDistribution { 2, 1 } },
     {MSColumns::channel, ProcessDistribution { 2, 2 } }
   };
 

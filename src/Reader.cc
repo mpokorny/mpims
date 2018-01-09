@@ -348,12 +348,36 @@ Reader::init_fileview() {
     if (ip->within_fileview) {
       auto count = ip->block_len * ip->max_blocks;
       if (count > 1) {
+        // resize current m_fileview_datatype to equal stride between elements
+        // on this axis
         auto i0 = m_ms_indexer->offset_of_(index);
-        index[ip->axis] += ip->stride;
+        ++index[ip->axis];
         auto i1 = m_ms_indexer->offset_of_(index);
-        index[ip->axis] -= ip->stride;
-        auto stride = (i1 - i0) * sizeof(std::complex<float>);
+        --index[ip->axis];
+        auto unit_stride = (i1 - i0) * sizeof(std::complex<float>);
         ::MPI_Datatype dt1 = m_fileview_datatype;
+        MPI_Aint lb1, extent1;
+        mpi_call(::MPI_Type_get_extent, dt1, &lb1, &extent1);
+        assert(static_cast<MPI_Aint>(static_cast<std::size_t>(extent1))
+               == extent1);
+        if (static_cast<std::size_t>(extent1) != unit_stride) {
+          mpi_call(
+            ::MPI_Type_create_resized,
+            dt1,
+            lb1,
+            unit_stride,
+            &m_fileview_datatype);
+          if (!m_fileview_datatype_predef)
+            mpi_call(::MPI_Type_free, &dt1);
+          m_fileview_datatype_predef = false;
+          dt1 = m_fileview_datatype;
+        }
+
+        // create blocked vector of m_fileview_datatype elements
+        index[ip->axis] += ip->stride;
+        auto is = m_ms_indexer->offset_of_(index);
+        index[ip->axis] -= ip->stride;
+        auto stride = (is - i0) * sizeof(std::complex<float>);
         // TODO: handle case where ip->length % ip->block_len != 0
         mpi_call(
           ::MPI_Type_create_hvector,
@@ -362,27 +386,9 @@ Reader::init_fileview() {
           stride,
           dt1,
           &m_fileview_datatype);
-        MPI_Aint lb1, extent1;
-        mpi_call(::MPI_Type_get_extent, dt1, &lb1, &extent1);
         if (!m_fileview_datatype_predef)
           mpi_call(::MPI_Type_free, &dt1);
         m_fileview_datatype_predef = false;
-        MPI_Aint lb, extent;
-        mpi_call(::MPI_Type_get_extent, m_fileview_datatype, &lb, &extent);
-        assert(static_cast<MPI_Aint>(static_cast<std::size_t>(extent))
-               == extent);
-        if (static_cast<std::size_t>(extent) != ip->max_blocks * stride) {
-          ::MPI_Datatype dt2 = m_fileview_datatype;
-          extent = ip->max_blocks * stride;
-          mpi_call(
-            ::MPI_Type_create_resized,
-            dt2,
-            lb,
-            extent,
-            &m_fileview_datatype);
-          mpi_call(::MPI_Type_free, &dt2);
-          mpi_call(::MPI_Type_get_extent, m_fileview_datatype, &lb, &extent);
-        }
       }
     }
     ++ms_axis;
