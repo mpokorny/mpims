@@ -35,7 +35,13 @@ public:
     bool debug_log = false);
 
   virtual ~Reader() {
-    finalize();
+    try {
+      finalize();
+    } catch (const mpi_error& e) {
+      std::cerr << "Reader::finalize() failed in ~Reader(): "
+                << e.what()
+                << std::endl;
+    }
   };
 
   void

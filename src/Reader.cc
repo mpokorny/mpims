@@ -116,44 +116,19 @@ Reader::Reader(
 
 void
 Reader::finalize() {
-  if (m_file != MPI_FILE_NULL) {
-    try {
-      mpi_call(::MPI_File_close, &m_file);
-    } catch (const mpi_error& e) {
-      std::cerr << "MPI_File_close failed in ~Reader(): "
-                << e.what()
-                << std::endl;
-    }
-  }
+  if (m_file != MPI_FILE_NULL)
+    mpi_call(::MPI_File_close, &m_file);
+
   if (m_array_datatype != MPI_DATATYPE_NULL
-      && !m_array_datatype_predef) {
-    try {
-      mpi_call(::MPI_Type_free, &m_array_datatype);
-    } catch (const mpi_error& e) {
-      std::cerr << "MPI_Type_free failed in ~Reader(): "
-                << e.what()
-                << std::endl;
-    }
-  }
+      && !m_array_datatype_predef)
+    mpi_call(::MPI_Type_free, &m_array_datatype);
+
   if (m_fileview_datatype != MPI_DATATYPE_NULL
-      && !m_fileview_datatype_predef) {
-    try {
-      mpi_call(::MPI_Type_free, &m_fileview_datatype);
-    } catch (const mpi_error& e) {
-      std::cerr << "MPI_Type_free failed in ~Reader(): "
-                << e.what()
-                << std::endl;
-    }
-  }
-  if (m_comm != MPI_COMM_NULL) {
-    try {
-      mpi_call(::MPI_Comm_free, &m_comm);
-    } catch (const mpi_error& e) {
-      std::cerr << "MPI_Comm_free failed in ~Reader(): "
-                << e.what()
-                << std::endl;
-    }
-  }
+      && !m_fileview_datatype_predef)
+    mpi_call(::MPI_Type_free, &m_fileview_datatype);
+
+  if (m_comm != MPI_COMM_NULL) 
+    mpi_call(::MPI_Comm_free, &m_comm);
 }
 
 void
