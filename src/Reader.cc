@@ -88,7 +88,7 @@ Reader::Reader(
   mpi_call(::MPI_Comm_rank, m_comm, &m_rank);
 
   init_iterparams(traversal_order, pgrid);
-  init_outer_array_axis();
+  init_traversal_partitions();
   init_fileview();
   adjust_outer_array_axis();
   // std::cout << "m_outer_array_axis " << mscol_nickname(m_outer_array_axis) << std::endl;
@@ -188,36 +188,69 @@ Reader::init_iterparams(
       std::size_t stride = grid_len * block_len;
       std::size_t max_blocks = (length + stride - 1) / stride;
       m_iter_params[traversal_index] =
-        IterParams { col, false, num_processes > 1, length, origin, stride,
-                     block_len, max_blocks };
+        IterParams { col, false, true, length, origin, stride, block_len, max_blocks };
       dist_size *= grid_len;
     });
 }
 
 void
-Reader::init_outer_array_axis() {
+Reader::init_traversal_partitions() {
   // compute shape of largest array with full-length dimensions (for this rank)
   // that buffer of requested size can contain, building up from innermost
-  // traversal axis
+  // traversal axis...this is the array partition, as it defines the axis at
+  // which the data occupies a single array in memory
   std::size_t buffer_length = m_buffer_size / sizeof(std::complex<float>);
-  std::size_t array_length = 1;
+  std::size_t array_size = 1;
   auto start_array = m_iter_params.rbegin();
-  auto next_array_length =
-    array_length * start_array->block_len * start_array->max_blocks;
+  auto next_array_size =
+    array_size * start_array->block_len * start_array->max_blocks;
   while (start_array != m_iter_params.rend()
-         && next_array_length <= buffer_length) {
-    array_length = next_array_length;
+         && next_array_size <= buffer_length) {
+    array_size = next_array_size;
     start_array->in_array = true;
     ++start_array;
     if (start_array != m_iter_params.rend())
-      next_array_length =
-        array_length * start_array->block_len * start_array->max_blocks;
+      next_array_size =
+        array_size * start_array->block_len * start_array->max_blocks;
   }
   if (start_array == m_iter_params.rbegin())
     throw std::runtime_error("maximum buffer size too small");
-  --start_array;
 
-  m_outer_array_axis = start_array->axis;
+  // determine which axes are out of order with respect to the MS order
+  std::unordered_set<MSColumns> out_of_order;
+  {
+    auto ip = m_iter_params.crbegin();
+    auto ms = m_ms_shape.crbegin();
+    while (ms != m_ms_shape.crend()) {
+      if (ms->id() == ip->axis)
+        ++ip;
+      else
+        out_of_order.insert(ms->id());
+      ++ms;
+    }
+  }
+
+  // determine the axis at which the traversal order is incompatible with the MS
+  // order, with the knowledge that out of order traversal is OK if the
+  // reordering can be done in memory (that, is within the array
+  // partition)...this is the fileview partition, as it defines the axis at
+  // which the fileview must be created
+  {
+    bool in_array_reordering = false;
+    auto ip = m_iter_params.rbegin();
+    while (ip != m_iter_params.rend()) {
+      if (!m_inner_fileview_axis) {
+        if (out_of_order.count(ip->axis) > 0 || in_array_reordering) {
+          if (!ip->in_array)
+            m_inner_fileview_axis = ip->axis;
+          else
+            in_array_reordering = true;
+        }
+      }
+      ip->within_fileview = !m_inner_fileview_axis.has_value();
+      ++ip;
+    }
+  }
 }
 
 void
@@ -251,20 +284,20 @@ Reader::init_array_datatype() {
     m_ms_shape.crend(),
     [this, &array_indexer, &index](const ColumnAxisBase<MSColumns>& ax) {
       auto ax_id = ax.id();
-      auto array_iter_param =
+      auto ip =
         std::find_if(
           std::begin(m_iter_params),
           std::end(m_iter_params),
           [&ax_id](const IterParams& ip) {
             return ip.axis == ax_id;
           });
-      if (array_iter_param->in_array) {
-        auto count = array_iter_param->block_len * array_iter_param->max_blocks;
+      if (ip->in_array) {
+        auto count = ip->block_len * ip->max_blocks;
         if (count > 1) {
           auto i0 = array_indexer->offset_of_(index);
-          index[ax_id] = 1;
+          ++index[ax_id];
           auto i1 = array_indexer->offset_of_(index);
-          index[ax_id] = 0;
+          --index[ax_id];
           auto stride = (i1 - i0) * sizeof(std::complex<float>);
           ::MPI_Datatype dt = m_array_datatype;
           mpi_call(
@@ -288,124 +321,83 @@ Reader::init_array_datatype() {
 void
 Reader::init_fileview() {
 
-  // find innermost out-of-order traversal axis
-  std::unordered_set<MSColumns> out_of_order;
-  auto ms_axis = m_ms_shape.crbegin();
-  auto ip = m_iter_params.crbegin();
-  while (ms_axis != m_ms_shape.crend()) {
-    if (ms_axis->id() != ip->axis)
-      out_of_order.insert(ms_axis->id());
-    else
-      ++ip;
-    ++ms_axis;
-  }
-  ip = m_iter_params.crbegin();
-  while (!m_inner_fileview_axis && ip != m_iter_params.crend()) {
-    // select the innermost of the out of order traversal axes that is not among
-    // the array axes
-    if (!ip->in_array && out_of_order.count(ip->axis) > 0)
-      m_inner_fileview_axis = ip->axis;
-    ++ip;
-  }
-  // now move m_inner_fileview_axis inwards until it's not above any distributed
-  // axes
-  bool below_inner_fileview = !m_inner_fileview_axis.has_value();
-  auto ipf = std::begin(m_iter_params);
-  while (ipf != std::end(m_iter_params) && !below_inner_fileview) {
-    below_inner_fileview = ipf->axis == m_inner_fileview_axis.value();
-    ++ipf;
-  }
-  while (ipf != std::end(m_iter_params)) {
-    if (ipf->is_distributed)
-      m_inner_fileview_axis = ipf->axis;
-    ++ipf;
-  }
-
   // build datatype for fileview
   m_fileview_datatype = MPI_CXX_FLOAT_COMPLEX;
   m_fileview_datatype_predef = true;
-  if (m_inner_fileview_axis) {
 
-    ArrayIndexer<MSColumns>::index index;
-    std::for_each(
-      std::begin(m_iter_params),
-      std::end(m_iter_params),
-      [&index](const IterParams& ip) {
-        index[ip.axis] = 0;
-      });
+  ArrayIndexer<MSColumns>::index index;
+  std::for_each(
+    std::begin(m_iter_params),
+    std::end(m_iter_params),
+    [&index](const IterParams& ip) {
+      index[ip.axis] = 0;
+    });
 
-    ms_axis = m_ms_shape.crbegin();
-    ip = m_iter_params.crbegin();
-    while (ip->axis != m_inner_fileview_axis.value()) {
-      auto ms_axis_id = ms_axis->id();
-      ::MPI_Datatype dt1 = m_fileview_datatype;
-      if (ms_axis_id == ip->axis) {
-        auto count = ip->block_len * ip->max_blocks;
-        if (count > 1) {
-          auto i0 = m_ms_indexer->offset_of_(index);
-          index[ip->axis] = ip->stride;
-          auto i1 = m_ms_indexer->offset_of_(index);
-          index[ip->axis] = 0;
-          auto stride = (i1 - i0) * sizeof(std::complex<float>);
+  // ::MPI_Datatype last_dt = m_fileview_datatype;
+  auto ms_axis = m_ms_shape.crbegin();
+  while (ms_axis != m_ms_shape.crend()) {
+    auto ms_axis_id = ms_axis->id();
+    auto ip =
+      std::find_if(
+        std::begin(m_iter_params),
+        std::end(m_iter_params),
+        [&ms_axis_id](const IterParams& ip) {
+          return ip.axis == ms_axis_id;
+        });
+
+    if (ip->within_fileview) {
+      auto count = ip->block_len * ip->max_blocks;
+      if (count > 1) {
+        auto i0 = m_ms_indexer->offset_of_(index);
+        index[ip->axis] += ip->stride;
+        auto i1 = m_ms_indexer->offset_of_(index);
+        index[ip->axis] -= ip->stride;
+        auto stride = (i1 - i0) * sizeof(std::complex<float>);
+        ::MPI_Datatype dt1 = m_fileview_datatype;
+        // TODO: handle case where ip->length % ip->block_len != 0
+        mpi_call(
+          ::MPI_Type_create_hvector,
+          ip->max_blocks,
+          ip->block_len,
+          stride,
+          dt1,
+          &m_fileview_datatype);
+        MPI_Aint lb1, extent1;
+        mpi_call(::MPI_Type_get_extent, dt1, &lb1, &extent1);
+        if (!m_fileview_datatype_predef)
+          mpi_call(::MPI_Type_free, &dt1);
+        m_fileview_datatype_predef = false;
+        MPI_Aint lb, extent;
+        mpi_call(::MPI_Type_get_extent, m_fileview_datatype, &lb, &extent);
+        assert(static_cast<MPI_Aint>(static_cast<std::size_t>(extent))
+               == extent);
+        if (static_cast<std::size_t>(extent) != ip->max_blocks * stride) {
+          ::MPI_Datatype dt2 = m_fileview_datatype;
+          extent = ip->max_blocks * stride;
           mpi_call(
-            ::MPI_Type_create_hvector,
-            ip->max_blocks,
-            ip->block_len,
-            stride,
-            dt1,
+            ::MPI_Type_create_resized,
+            dt2,
+            lb,
+            extent,
             &m_fileview_datatype);
-          if (!m_fileview_datatype_predef)
-            mpi_call(::MPI_Type_free, &dt1);
-          m_fileview_datatype_predef = false;
-          stride = 1;
+          mpi_call(::MPI_Type_free, &dt2);
+          mpi_call(::MPI_Type_get_extent, m_fileview_datatype, &lb, &extent);
         }
-        ++ip;
       }
-      ++ms_axis;
     }
+    ++ms_axis;
   }
+
   if (!m_fileview_datatype_predef)
     mpi_call(::MPI_Type_commit, &m_fileview_datatype);
 }
 
 void
-Reader::adjust_outer_array_axis() {
-  if (!m_inner_fileview_axis)
-    return;
-  MSColumns inner_fileview_axis = m_inner_fileview_axis.value();
-
-  auto ip = std::begin(m_iter_params);
-  while (ip != std::end(m_iter_params)
-         && ip->axis != m_outer_array_axis
-         && ip->axis != inner_fileview_axis)
-    ++ip;
-
-  while (ip != std::end(m_iter_params) && ip->axis != inner_fileview_axis) {
-    auto next = ip + 1;
-    if (next != std::end(m_iter_params)) {
-      ip->in_array = false;
-      m_outer_array_axis = next->axis;
-    }
-    ip = next;
-  }
-}
-
-void
 Reader::set_fileview(ArrayIndexer<MSColumns>::index& index) {
-  // indices of inner array axes not required to be set by caller, set them to
-  // zero
-  bool fileview_axis = m_inner_fileview_axis.has_value();
   std::for_each(
     std::begin(m_iter_params),
     std::end(m_iter_params),
-    [this, &fileview_axis, &index](const IterParams& ip) mutable {
-      if (!fileview_axis)
-        index[ip.axis] = 0;
-      else if (ip.axis == m_inner_fileview_axis.value())
-        fileview_axis = false;
     });
-
-  std::size_t offset = m_ms_indexer->offset_of_(index);
   mpi_call(
     ::MPI_File_set_view,
     m_file,
@@ -419,15 +411,12 @@ Reader::set_fileview(ArrayIndexer<MSColumns>::index& index) {
 std::vector<IndexBlockSequence<MSColumns> >
 Reader::make_index_block_sequences() {
   std::vector<IndexBlockSequence<MSColumns> > result;
-  bool in_array;
   std::for_each(
     std::begin(m_iter_params),
     std::end(m_iter_params),
-    [this, &in_array, &result](const IterParams& ip) mutable {
-      if (ip.axis == m_outer_array_axis)
-        in_array = true;
+    [this, &result](const IterParams& ip) mutable {
       std::vector<IndexBlock> blocks;
-      if (in_array) {
+      if (ip.in_array) {
         // merge gap-less consecutive blocks
         std::size_t start = ip.origin;
         std::size_t end = ip.origin + ip.block_len;

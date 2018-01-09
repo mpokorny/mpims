@@ -19,11 +19,11 @@ using namespace std;
 
 constexpr auto ntim = 4;
 constexpr auto nbits_tim = 2;
-constexpr auto nspw = 2;
-constexpr auto nbits_spw = 1;
+constexpr auto nspw = 4;
+constexpr auto nbits_spw = 2;
 constexpr auto nbal = 3 /*6*/;
 constexpr auto nbits_bal = 3;
-constexpr auto nch = 2 /*8*/;
+constexpr auto nch = 8;
 constexpr auto nbits_ch = 3;
 constexpr auto npol = 2;
 constexpr auto nbits_pol = 1;
@@ -114,18 +114,18 @@ checkit(
             {MSColumns::polarization_product, pol}
           };
           output << "error at ("
-               << coords[0].second << ","
-               << coords[1].second << ","
-               << coords[2].second << ","
-               << coords[3].second << ","
-               << coords[4].second << "); "
-               << "value: ("
-               << value_map[coords[0].first] << ","
-               << value_map[coords[1].first] << ","
-               << value_map[coords[2].first] << ","
-               << value_map[coords[3].first] << ","
-               << value_map[coords[4].first] << ")"
-               << endl;
+                 << coords[0].second << ","
+                 << coords[1].second << ","
+                 << coords[2].second << ","
+                 << coords[3].second << ","
+                 << coords[4].second << "); "
+                 << "value: ("
+                 << value_map[coords[0].first] << ","
+                 << value_map[coords[1].first] << ","
+                 << value_map[coords[2].first] << ","
+                 << value_map[coords[3].first] << ","
+                 << value_map[coords[4].first] << ")"
+                 << endl;
         }
         coords.pop_back();
       }
@@ -244,24 +244,27 @@ main(int argc, char* argv[]) {
 
   vector<size_t> buffer_sizes = {
     max_buffer_size,
-    max_buffer_size / ntim
+    max_buffer_size / ntim,
+    max_buffer_size / nch,
+    npol * nch * sizeof(complex<float>)
   };
 
   vector<vector<MSColumns> > traversal_orders {
     {MSColumns::time, MSColumns::spectral_window, MSColumns::baseline,
         MSColumns::channel, MSColumns::polarization_product},
-      {MSColumns::spectral_window, MSColumns::time, MSColumns::baseline,
-          MSColumns::channel, MSColumns::polarization_product},
-      {MSColumns::channel, MSColumns::spectral_window,
-          MSColumns::time, MSColumns::baseline, MSColumns::polarization_product},
-      {MSColumns::polarization_product, MSColumns::spectral_window,
-          MSColumns::time, MSColumns::baseline, MSColumns::channel}
-      };
+    {MSColumns::spectral_window, MSColumns::time, MSColumns::baseline,
+        MSColumns::channel, MSColumns::polarization_product},
+    {MSColumns::channel, MSColumns::spectral_window,
+        MSColumns::time, MSColumns::baseline, MSColumns::polarization_product},
+    // {MSColumns::polarization_product, MSColumns::spectral_window,
+    //     MSColumns::time, MSColumns::baseline, MSColumns::channel}
+  };
 
   // unordered_map<MSColumns, ProcessDistribution> pgrid;
 
   unordered_map<MSColumns, ProcessDistribution> pgrid = {
-    {MSColumns::spectral_window, ProcessDistribution { 2, 1 } }
+    {MSColumns::spectral_window, ProcessDistribution { 2, 2 } },
+    {MSColumns::channel, ProcessDistribution { 2, 2 } }
   };
 
   int my_rank;

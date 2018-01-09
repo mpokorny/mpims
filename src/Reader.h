@@ -65,7 +65,7 @@ private:
 
   struct IterParams {
     MSColumns axis;
-    bool in_array, is_distributed;
+    bool in_array, within_fileview;
     std::size_t length, origin, stride, block_len, max_blocks;
   };
 
@@ -102,7 +102,7 @@ private:
     void
     increment() {
       if (!at_end) {
-        auto block = (index - params.origin) / params.stride;
+        auto block = index / params.stride;
         auto block_origin = params.origin + block * params.stride;
         ++index;
         if (index - block_origin >= params.block_len) {
@@ -127,16 +127,13 @@ private:
     const std::unordered_map<MSColumns, ProcessDistribution>& pgrid);
 
   void
-  init_outer_array_axis();
+  init_traversal_partitions();
 
   void
   init_array_datatype();
 
   void
   init_fileview();
-
-  void
-  adjust_outer_array_axis();
 
   void
   set_fileview(ArrayIndexer<MSColumns>::index& index);
@@ -155,6 +152,12 @@ private:
     std::vector<IndexBlockSequence<MSColumns> > indexes =
       make_index_block_sequences();
     ArrayIndexer<MSColumns>::index data_index;
+    std::for_each(
+      std::begin(m_iter_params),
+      std::end(m_iter_params),
+      [&data_index](const IterParams& ip) {
+        data_index[ip.axis] = ip.origin;
+      });
     if (!m_inner_fileview_axis)
       set_fileview(data_index);
     std::stack<AxisIter> axis_iters;
@@ -162,13 +165,13 @@ private:
     while (!(eof || axis_iters.empty())) {
       auto depth = axis_iters.size();
       AxisIter& axis_iter = axis_iters.top();
+      const MSColumns& axis = axis_iter.params.axis;
       if (!axis_iter.at_end) {
-        const MSColumns& axis = axis_iter.params.axis;
         indexes[depth - 1].m_blocks[0].m_index = axis_iter.index;
         data_index[axis] = axis_iter.index;
         if (m_inner_fileview_axis && axis == m_inner_fileview_axis.value())
           set_fileview(data_index);
-        if (axis == m_outer_array_axis) {
+        if (axis_iter.params.in_array) {
           eof = true;
           std::shared_ptr<std::complex<float> > buffer;
           if (axis_iter.at_data) {
@@ -192,6 +195,7 @@ private:
           axis_iters.emplace(next_params, axis_iter.at_data);
         }
       } else {
+        data_index[axis] = axis_iter.params.origin;
         axis_iters.pop();
         if (!axis_iters.empty())
           axis_iters.top().increment();
