@@ -127,7 +127,7 @@ Reader::finalize() {
       && !m_fileview_datatype_predef)
     mpi_call(::MPI_Type_free, &m_fileview_datatype);
 
-  if (m_comm != MPI_COMM_NULL) 
+  if (m_comm != MPI_COMM_NULL)
     mpi_call(::MPI_Comm_free, &m_comm);
 }
 
@@ -535,4 +535,24 @@ Reader::read_array(bool at_data) {
   if (count == 0)
     result.reset();
   return result;
+}
+
+Reader::TraversalState
+Reader::begin() {
+  TraversalState result(make_index_block_sequences(), m_iter_params);
+  if (m_comm != MPI_COMM_NULL) {
+    if (!m_inner_fileview_axis)
+      set_fileview(result.data_index);
+    result.axis_iters.emplace(
+      m_iter_params[0],
+      m_iter_params[0].max_blocks > 0);
+  }
+  return result;
+}
+
+bool
+Reader::end(TraversalState& state) {
+  return !state.cont
+    || state.eof
+    || state.axis_iters.empty();
 }
