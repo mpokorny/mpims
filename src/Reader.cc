@@ -20,7 +20,7 @@ Reader::Reader(
   ::MPI_Info info,
   const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
   const std::vector<MSColumns>& traversal_order,
-  std::unordered_map<MSColumns, ProcessDistribution>& pgrid,
+  std::unordered_map<MSColumns, DataDistribution>& pgrid,
   std::size_t max_buffer_size,
   bool debug_log)
   : m_ms_shape(ms_shape)
@@ -40,7 +40,7 @@ Reader::Reader(
   // reduce process grid for small (blocked) axis sizes
   for (auto& pg : pgrid) {
     MSColumns pcol;
-    ProcessDistribution pdist;
+    DataDistribution pdist;
     std::tie(pcol, pdist) = pg;
     auto ax =
       std::find_if(
@@ -134,7 +134,7 @@ Reader::finalize() {
 void
 Reader::init_iterparams(
   const std::vector<MSColumns>& traversal_order,
-  const std::unordered_map<MSColumns, ProcessDistribution>& pgrid) {
+  const std::unordered_map<MSColumns, DataDistribution>& pgrid) {
 
   m_iter_params.resize(traversal_order.size());
   std::size_t dist_size = 1;
@@ -142,7 +142,7 @@ Reader::init_iterparams(
     std::begin(m_ms_shape),
     std::end(m_ms_shape),
     [this, &dist_size, &traversal_order, &pgrid]
-    (const ColumnAxisBase<MSColumns>& ax) mutable {
+    (const ColumnAxisBase<MSColumns>& ax) {
       // find index of this column in traversal_order
       MSColumns col = ax.id();
       std::size_t length = ax.length();

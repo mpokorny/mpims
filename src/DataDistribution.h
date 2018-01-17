@@ -1,16 +1,16 @@
 /* -*- mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; -*- */
-#ifndef PROCESS_DISTRIBUTION_H_
-#define PROCESS_DISTRIBUTION_H_
+#ifndef DATA_DISTRIBUTION_H_
+#define DATA_DISTRIBUTION_H_
 
 #include <cstddef>
 
 namespace mpims {
 
-struct ProcessDistribution {
+struct DataDistribution {
   std::size_t num_processes;
   std::size_t block_size;
 };
 
 }
 
-#endif // PROCESS_DISTRIBUTION_H_
+#endif // DATA_DISTRIBUTION_H_

@@ -261,11 +261,11 @@ main(int argc, char* argv[]) {
         MSColumns::time, MSColumns::baseline, MSColumns::channel}
   };
 
-  // unordered_map<MSColumns, ProcessDistribution> pgrid;
+  // unordered_map<MSColumns, DataDistribution> pgrid;
 
-  unordered_map<MSColumns, ProcessDistribution> pgrid = {
-    {MSColumns::spectral_window, ProcessDistribution { 2, 1 } },
-    {MSColumns::channel, ProcessDistribution { 2, 3 } }
+  unordered_map<MSColumns, DataDistribution> pgrid = {
+    {MSColumns::spectral_window, DataDistribution { 2, 1 } },
+    {MSColumns::channel, DataDistribution { 2, 3 } }
   };
 
   int my_rank;

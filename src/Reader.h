@@ -19,7 +19,7 @@
 #include <ColumnAxis.h>
 #include <IndexBlock.h>
 #include <MSColumns.h>
-#include <ProcessDistribution.h>
+#include <DataDistribution.h>
 
 namespace mpims {
 
@@ -115,7 +115,7 @@ public:
     ::MPI_Info info,
     const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
     const std::vector<MSColumns>& traversal_order,
-    std::unordered_map<MSColumns, ProcessDistribution>& pgrid,
+    std::unordered_map<MSColumns, DataDistribution>& pgrid,
     std::size_t max_buffer_size,
     bool debug_log = false);
 
@@ -173,7 +173,7 @@ private:
   void
   init_iterparams(
     const std::vector<MSColumns>& traversal_order,
-    const std::unordered_map<MSColumns, ProcessDistribution>& pgrid);
+    const std::unordered_map<MSColumns, DataDistribution>& pgrid);
 
   void
   init_traversal_partitions();
