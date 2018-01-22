@@ -2,6 +2,7 @@
 #ifndef MPIMS_H_
 #define MPIMS_H_
 
+#include <memory>
 #include <stdexcept>
 
 #include <mpi.h>
@@ -35,6 +36,20 @@ mpi_call(Function fn, Args...args) {
   if (rc != MPI_SUCCESS)
     throw mpi_error(rc);
 }
+
+bool
+datatype_is_predefined(::MPI_Datatype dt);
+
+struct DatatypeDeleter {
+  void operator()(::MPI_Datatype* dt) {
+    if (*dt != MPI_DATATYPE_NULL && !datatype_is_predefined(*dt))
+      mpi_call(::MPI_Type_free, dt);
+    delete dt;
+  }
+};
+
+std::unique_ptr<::MPI_Datatype, DatatypeDeleter>
+datatype(::MPI_Datatype dt = MPI_DATATYPE_NULL);
 
 } // end namespace mpims
 
