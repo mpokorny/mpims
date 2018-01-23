@@ -20,6 +20,7 @@
 #include <IndexBlock.h>
 #include <MSColumns.h>
 #include <DataDistribution.h>
+#include <ReaderMPIState.h>
 
 namespace mpims {
 
@@ -119,23 +120,12 @@ public:
     std::size_t max_buffer_size,
     bool debug_log = false);
 
-  virtual ~Reader() {
-    try {
-      finalize();
-    } catch (const mpi_error& e) {
-      std::cerr << "Reader::finalize() failed in ~Reader(): "
-                << e.what()
-                << std::endl;
-    }
-  };
-
-  void
-  finalize();
-
   template <typename F>
   void
   iterate(const F& callback) {
-    if (m_comm != MPI_COMM_NULL)
+    auto handles = m_mpi_state.handles();
+    std::lock_guard<MPIHandles> lock(*handles);
+    if (handles->comm != MPI_COMM_NULL)
       loop(callback);
   }
 
@@ -143,13 +133,9 @@ private:
 
   std::vector<ColumnAxisBase<MSColumns> > m_ms_shape;
 
-  ::MPI_Comm m_comm;
+  ReaderMPIState m_mpi_state;
 
-  ::MPI_File m_file;
-
-  bool m_array_datatype_predef;
-
-  ::MPI_Datatype m_array_datatype;
+  std::shared_ptr<::MPI_Datatype> m_array_datatype;
 
   int m_rank;
 
@@ -162,9 +148,7 @@ private:
 
   std::optional<MSColumns> m_inner_fileview_axis;
 
-  bool m_fileview_datatype_predef;
-
-  ::MPI_Datatype m_fileview_datatype;
+  std::shared_ptr<::MPI_Datatype> m_fileview_datatype;
 
   std::shared_ptr<ArrayIndexer<MSColumns> > m_ms_indexer;
 
@@ -235,14 +219,18 @@ private:
           state.eof = true;
         }
         std::array<bool, 2> tests { state.cont, state.eof };
-        mpi_call(
-          ::MPI_Allreduce,
-          MPI_IN_PLACE,
-          tests.data(),
-          tests.size(),
-          MPI_CXX_BOOL,
-          MPI_LAND,
-          m_comm);
+        {
+          auto handles = m_mpi_state.handles();
+          std::lock_guard<MPIHandles> lock(*handles);
+          mpi_call(
+            ::MPI_Allreduce,
+            MPI_IN_PLACE,
+            tests.data(),
+            tests.size(),
+            MPI_CXX_BOOL,
+            MPI_LAND,
+            handles->comm);
+        }
         state.cont = tests[0];
         state.eof = tests[1];
         axis_iter.complete();

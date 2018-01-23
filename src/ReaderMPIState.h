@@ -92,11 +92,13 @@ public:
   }
 
   ReaderMPIState(const ReaderMPIState& other) {
+    std::lock_guard<const ReaderMPIState> lock(other);
     derive_from(other);
   }
 
   ReaderMPIState&
   operator=(const ReaderMPIState& other) {
+    std::lock_guard<ReaderMPIState> lock(*this);
     if (this != &other) {
       ReaderMPIState temp(other);
       swap(temp);
@@ -116,6 +118,7 @@ public:
 
   ReaderMPIState&
   operator=(ReaderMPIState&& other) {
+    std::lock_guard<ReaderMPIState> lock(*this);
     m_latent = std::move(other).m_latent;
     m_current = std::move(other).m_current;
     m_disp = std::move(other).m_disp;
@@ -150,6 +153,8 @@ public:
   void
   swap(ReaderMPIState& other) {
     using std::swap;
+    std::lock_guard<ReaderMPIState> lock1(*this);
+    std::lock_guard<ReaderMPIState> lock2(other);
     swap(m_current, other.m_current);
     swap(m_latent, other.m_latent);
     swap(m_disp, other.m_disp);
@@ -162,9 +167,10 @@ public:
 protected:
 
   void
-  derive_from(const ReaderMPIState& other) {
+  derive_from(const ReaderMPIState& other) const {
     m_path = other.m_path;
     if (other.m_current) {
+      std::lock_guard<MPIHandles> lock(*other.m_current);
       if (other.m_current->file != MPI_FILE_NULL) {
         other.m_disp = std::make_shared<const ::MPI_Offset>();
         other.m_filetype = datatype();
@@ -219,6 +225,7 @@ protected:
       ::MPI_Comm comm;
       ::MPI_Info info;
       ::MPI_File file;
+      std::lock_guard<MPIHandles> lock(*m_latent);
       if (m_latent->comm != MPI_COMM_NULL) {
         mpi_call(::MPI_Comm_dup, m_latent->comm, &comm);
         mpi_call(::MPI_Comm_set_errhandler, comm, MPI_ERRORS_RETURN);
@@ -278,7 +285,7 @@ private:
 
   mutable ::MPI_Offset m_offset;
 
-  std::shared_ptr<const std::string> m_path;
+  mutable std::shared_ptr<const std::string> m_path;
 };
 
 } // end namespace mpims

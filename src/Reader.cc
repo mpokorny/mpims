@@ -24,15 +24,9 @@ Reader::Reader(
   std::size_t max_buffer_size,
   bool debug_log)
   : m_ms_shape(ms_shape)
-  , m_comm(MPI_COMM_NULL)
-  , m_file(MPI_FILE_NULL)
-  , m_array_datatype_predef(false)
-  , m_array_datatype(MPI_DATATYPE_NULL)
   , m_buffer_size(
     (max_buffer_size / sizeof(std::complex<float>))
     * sizeof(std::complex<float>))
-  , m_fileview_datatype_predef(false)
-  , m_fileview_datatype(MPI_DATATYPE_NULL)
   , m_ms_indexer(
     ArrayIndexer<MSColumns>::of(ArrayOrder::row_major, m_ms_shape))
   , m_debug_log(debug_log) {
@@ -73,6 +67,7 @@ Reader::Reader(
     throw std::runtime_error("too few processes for grid");
 
   // create a new communicator of the minimum needed size
+  auto handles = m_mpi_state.handles();
   if (static_cast<std::size_t>(comm_size) > pgrid_size) {
     int comm_rank;
     mpi_call(::MPI_Comm_rank, comm, &comm_rank);
@@ -81,13 +76,13 @@ Reader::Reader(
       comm,
       ((static_cast<std::size_t>(comm_rank) < pgrid_size) ? 1 : MPI_UNDEFINED),
       comm_rank,
-      &m_comm);
-    if (m_comm == MPI_COMM_NULL)
+      &handles->comm);
+    if (handles->comm == MPI_COMM_NULL)
       return;
   } else {
-    mpi_call(::MPI_Comm_dup, comm, &m_comm);
+    mpi_call(::MPI_Comm_dup, comm, &handles->comm);
   }
-  mpi_call(::MPI_Comm_rank, m_comm, &m_rank);
+  mpi_call(::MPI_Comm_rank, handles->comm, &m_rank);
 
   init_iterparams(traversal_order, pgrid);
   init_traversal_partitions();
@@ -104,31 +99,17 @@ Reader::Reader(
   init_fileview();
   init_array_datatype();
 
+  if (info != MPI_INFO_NULL)
+    mpi_call(::MPI_Info_dup, info, &handles->info);
+
   mpi_call(
     ::MPI_File_open,
-    m_comm,
+    handles->comm,
     path.c_str(),
     MPI_MODE_RDONLY,
-    info,
-    &m_file);
-  mpi_call(::MPI_File_set_errhandler, m_file, MPI_ERRORS_RETURN);
-}
-
-void
-Reader::finalize() {
-  if (m_file != MPI_FILE_NULL)
-    mpi_call(::MPI_File_close, &m_file);
-
-  if (m_array_datatype != MPI_DATATYPE_NULL
-      && !m_array_datatype_predef)
-    mpi_call(::MPI_Type_free, &m_array_datatype);
-
-  if (m_fileview_datatype != MPI_DATATYPE_NULL
-      && !m_fileview_datatype_predef)
-    mpi_call(::MPI_Type_free, &m_fileview_datatype);
-
-  if (m_comm != MPI_COMM_NULL)
-    mpi_call(::MPI_Comm_free, &m_comm);
+    handles->info,
+    &handles->file);
+  mpi_call(::MPI_File_set_errhandler, handles->file, MPI_ERRORS_RETURN);
 }
 
 void
@@ -295,8 +276,7 @@ Reader::init_array_datatype() {
   auto array_indexer =
     ArrayIndexer<MSColumns>::of(ArrayOrder::row_major, array);
 
-  m_array_datatype = MPI_CXX_FLOAT_COMPLEX;
-  m_array_datatype_predef = true;
+  m_array_datatype = datatype(MPI_CXX_FLOAT_COMPLEX);
   std::for_each(
     m_ms_shape.crbegin(),
     m_ms_shape.crend(),
@@ -324,31 +304,28 @@ Reader::init_array_datatype() {
                       << std::endl;
           }
           auto stride = (i1 - i0) * sizeof(std::complex<float>);
-          ::MPI_Datatype dt = m_array_datatype;
+          auto dt = m_array_datatype;
+          m_array_datatype = datatype();
           mpi_call(
             ::MPI_Type_create_hvector,
             count,
             1,
             stride,
-            dt,
-            &m_array_datatype);
-          if (!m_array_datatype_predef)
-            mpi_call(::MPI_Type_free, &dt);
-          m_array_datatype_predef = false;
+            *dt,
+            m_array_datatype.get());
         }
       }
     });
 
-  if (!m_array_datatype_predef)
-    mpi_call(::MPI_Type_commit, &m_array_datatype);
+  if (!datatype_is_predefined(*m_array_datatype))
+    mpi_call(::MPI_Type_commit, m_array_datatype.get());
 }
 
 void
 Reader::init_fileview() {
 
   // build datatype for fileview
-  m_fileview_datatype = MPI_CXX_FLOAT_COMPLEX;
-  m_fileview_datatype_predef = true;
+  m_fileview_datatype = datatype(MPI_CXX_FLOAT_COMPLEX);
 
   ArrayIndexer<MSColumns>::index index;
   std::for_each(
@@ -380,21 +357,19 @@ Reader::init_fileview() {
         auto i1 = m_ms_indexer->offset_of_(index);
         --index[ip->axis];
         auto unit_stride = (i1 - i0) * sizeof(std::complex<float>);
-        ::MPI_Datatype dt1 = m_fileview_datatype;
+        auto dt1 = m_fileview_datatype;
         MPI_Aint lb1, extent1;
-        mpi_call(::MPI_Type_get_extent, dt1, &lb1, &extent1);
+        mpi_call(::MPI_Type_get_extent, *dt1, &lb1, &extent1);
         assert(static_cast<MPI_Aint>(static_cast<std::size_t>(extent1))
                == extent1);
         if (static_cast<std::size_t>(extent1) != unit_stride) {
+          m_fileview_datatype = datatype();
           mpi_call(
             ::MPI_Type_create_resized,
-            dt1,
+            *dt1,
             lb1,
             unit_stride,
-            &m_fileview_datatype);
-          if (!m_fileview_datatype_predef)
-            mpi_call(::MPI_Type_free, &dt1);
-          m_fileview_datatype_predef = false;
+            m_fileview_datatype.get());
           dt1 = m_fileview_datatype;
         }
 
@@ -404,57 +379,54 @@ Reader::init_fileview() {
         index[ip->axis] -= ip->stride;
         auto stride = (is - i0) * sizeof(std::complex<float>);
         if (ip->terminal_block_len == ip->block_len) {
+          m_fileview_datatype = datatype();
           // sizes all block sizes are the same
           mpi_call(
             ::MPI_Type_create_hvector,
             ip->max_blocks,
             ip->block_len,
             stride,
-            dt1,
-            &m_fileview_datatype);
+            *dt1,
+            m_fileview_datatype.get());
         } else {
           // first ip->max_blocks - 1 blocks have one size, the last
           // block has a different size
           assert(ip->max_blocks > 1);
-          ::MPI_Datatype dt2;
+          auto dt2 = datatype();
           mpi_call(
             ::MPI_Type_create_hvector,
             ip->max_blocks - 1,
             ip->block_len,
             stride,
-            dt1,
-            &dt2);
-          ::MPI_Datatype dt3;
+            *dt1,
+            dt2.get());
+          auto dt3 = datatype();
           mpi_call(
             ::MPI_Type_contiguous,
             ip->terminal_block_len,
-            dt1,
-            &dt3);
+            *dt1,
+            dt3.get());
           auto terminal_displacement = stride * (ip->max_blocks - 1);
           std::vector<int> blocklengths {1, 1};
           std::vector<MPI_Aint> displacements {
             0, static_cast<MPI_Aint>(terminal_displacement)};
-          std::vector<MPI_Datatype> types {dt2, dt3};
+          std::vector<MPI_Datatype> types {*dt2, *dt3};
+          m_fileview_datatype = datatype();
           mpi_call(
             ::MPI_Type_create_struct,
             2,
             blocklengths.data(),
             displacements.data(),
             types.data(),
-            &m_fileview_datatype);
-          mpi_call(::MPI_Type_free, &dt2);
-          mpi_call(::MPI_Type_free, &dt3);
+            m_fileview_datatype.get());
         }
-        if (!m_fileview_datatype_predef)
-          mpi_call(::MPI_Type_free, &dt1);
-        m_fileview_datatype_predef = false;
       }
     }
     ++ms_axis;
   }
 
-  if (!m_fileview_datatype_predef)
-    mpi_call(::MPI_Type_commit, &m_fileview_datatype);
+  if (!datatype_is_predefined(*m_fileview_datatype))
+    mpi_call(::MPI_Type_commit, m_fileview_datatype.get());
 }
 
 void
@@ -472,12 +444,14 @@ Reader::set_fileview(ArrayIndexer<MSColumns>::index& index) {
     oss << std::endl;
     std::clog << oss.str();
   }
+  auto handles = m_mpi_state.handles();
+  std::lock_guard<MPIHandles> lock(*handles);
   mpi_call(
     ::MPI_File_set_view,
-    m_file,
+    handles->file,
     offset * sizeof(std::complex<float>),
     MPI_CXX_FLOAT_COMPLEX,
-    m_fileview_datatype,
+    *m_fileview_datatype,
     "native",
     MPI_INFO_NULL);
 }
@@ -524,14 +498,18 @@ Reader::read_array(bool at_data) {
     count = 0;
   }
   ::MPI_Status status;
-  mpi_call(
-    ::MPI_File_read_all,
-    m_file,
-    result.get(),
-    count,
-    m_array_datatype,
-    &status);
-  mpi_call(::MPI_Get_count, &status, m_array_datatype, &count);
+  {
+    auto handles = m_mpi_state.handles();
+    std::lock_guard lock(*handles);
+    mpi_call(
+      ::MPI_File_read_all,
+      handles->file,
+      result.get(),
+      count,
+      *m_array_datatype,
+      &status);
+  }
+  mpi_call(::MPI_Get_count, &status, *m_array_datatype, &count);
   if (count == 0)
     result.reset();
   return result;
@@ -540,7 +518,9 @@ Reader::read_array(bool at_data) {
 Reader::TraversalState
 Reader::begin() {
   TraversalState result(make_index_block_sequences(), m_iter_params);
-  if (m_comm != MPI_COMM_NULL) {
+  auto handles = m_mpi_state.handles();
+  std::lock_guard lock(*handles);
+  if (handles->comm != MPI_COMM_NULL) {
     if (!m_inner_fileview_axis)
       set_fileview(result.data_index);
     result.axis_iters.emplace(
