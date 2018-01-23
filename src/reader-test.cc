@@ -136,8 +136,7 @@ checkit(
 bool
 cb(
   const vector<IndexBlockSequence<MSColumns> >& indexes,
-  shared_ptr<complex<float> >& buffer,
-  bool& result,
+  const shared_ptr<complex<float> >& buffer,
   ostringstream& output) {
 
   output << "next buffer..." << endl;
@@ -153,10 +152,10 @@ cb(
 
   size_t n = 0;
   vector<pair<MSColumns, size_t> > coords;
-  result = checkit(buffer, n, coords, begin(indexes), end(indexes), output);
+  bool result = checkit(buffer, n, coords, begin(indexes), end(indexes), output);
   if (result)
     output << "no errors" << endl;
-  return true;
+  return result;
 }
 
 void
@@ -284,22 +283,28 @@ main(int argc, char* argv[]) {
              << num_elements(buffer_size)
              << " ========="
              << endl;
-      bool result;
-      Reader reader(
-        argv[1],
-        MPI_COMM_WORLD,
-        MPI_INFO_NULL,
-        ms_shape,
-        traversal_order,
-        pgrid,
-        buffer_size
-        /* , true */);
-      reader.iterate(
-        [&result, &output]
-        (const vector<IndexBlockSequence<MSColumns> >& indexes,
-         shared_ptr<complex<float> >& buffer) -> bool {
-          return cb(indexes, buffer, result, output);
-        });
+      auto reader =
+        Reader::begin(
+          argv[1],
+          MPI_COMM_WORLD,
+          MPI_INFO_NULL,
+          ms_shape,
+          traversal_order,
+          pgrid,
+          buffer_size
+          /* , true */);
+      while (reader != Reader::end()) {
+        const MSArray& array = *reader;
+        if (array.buffer) {
+          if (cb(array.blocks, array.buffer, output))
+            ++reader;
+          else
+            reader.interrupt();
+        }
+        else {
+          ++reader;
+        }
+      }
 
       int output_rank = 0;
       while (output_rank < world_size) {
