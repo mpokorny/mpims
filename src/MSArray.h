@@ -19,9 +19,9 @@ struct MSArray {
   }
 
   MSArray(
-    const std::vector<IndexBlockSequence<MSColumns> >& blocks_,
+    std::vector<IndexBlockSequence<MSColumns> >&& blocks_,
     std::shared_ptr<std::complex<float> >& buffer_)
-    : blocks(blocks_)
+    : blocks(std::move(blocks_))
     , buffer(buffer_) {
   }
 
