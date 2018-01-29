@@ -43,14 +43,24 @@ public:
 
     TraversalState(
       ::MPI_Comm comm,
-      const std::shared_ptr<const std::vector<IterParams> >& iter_params_)
+      const std::shared_ptr<const std::vector<IterParams> >& iter_params_,
+      MSColumns& outer_full_array_axis_,
+      const std::shared_ptr<const ::MPI_Datatype>& full_array_datatype,
+      const std::shared_ptr<const ::MPI_Datatype>& tail_array_datatype,
+      const std::shared_ptr<const ::MPI_Datatype>& full_fileview_datatype,
+      const std::shared_ptr<const ::MPI_Datatype>& tail_fileview_datatype)
       : eof(comm == MPI_COMM_NULL)
       , cont(!eof)
       , iter_params(iter_params_)
       , block_maps(make_index_block_sequences(iter_params_))
       , count(0)
       , max_count(0)
-      , in_tail(false) {
+      , in_tail(false)
+      , outer_full_array_axis(outer_full_array_axis_)
+      , m_full_array_datatype(full_array_datatype)
+      , m_tail_array_datatype(tail_array_datatype)
+      , m_full_fileview_datatype(full_fileview_datatype)
+      , m_tail_fileview_datatype(tail_fileview_datatype) {
     }
 
     bool eof;
@@ -71,15 +81,35 @@ public:
 
     bool in_tail;
 
+    MSColumns outer_full_array_axis;
+
+    std::shared_ptr<const ::MPI_Datatype>
+    array_datatype() const {
+      return in_tail ? m_tail_array_datatype : m_full_array_datatype;
+    }
+
+    std::shared_ptr<const ::MPI_Datatype>
+    fileview_datatype() const {
+      return in_tail ? m_tail_fileview_datatype : m_full_fileview_datatype;
+    }
+
     bool
     operator==(const TraversalState& other) const {
-      return (eof == other.eof
-              && cont == other.cont
-              && count == other.count
-              && block_maps == other.block_maps
-              && data_index == other.data_index
-              && axis_iters == other.axis_iters
-              && in_tail == other.in_tail);
+      return (
+        eof == other.eof
+        && cont == other.cont
+        && count == other.count
+        && block_maps == other.block_maps
+        && data_index == other.data_index
+        && axis_iters == other.axis_iters
+        && in_tail == other.in_tail
+        // comparing array datatypes and fileview datatypes would be ideal, but
+        // that could be a relatively expensive task, as it requires digging
+        // into the contents of the datatypes; instead, since those datatypes
+        // are functions of the MS shape, iteration order and outer array axis
+        // alone, given the previous comparisons, we can just compare the outer
+        // arrays axis values
+        && outer_full_array_axis == other.outer_full_array_axis);
     }
 
     bool
@@ -107,6 +137,17 @@ public:
       }
       return result;
     }
+
+  private:
+
+    std::shared_ptr<const ::MPI_Datatype> m_full_array_datatype;
+
+    std::shared_ptr<const ::MPI_Datatype> m_tail_array_datatype;
+
+    std::shared_ptr<const ::MPI_Datatype> m_full_fileview_datatype;
+
+    std::shared_ptr<const ::MPI_Datatype> m_tail_fileview_datatype;
+
   };
 
   Reader() {
@@ -115,68 +156,32 @@ public:
   Reader(
     ReaderMPIState&& mpi_state,
     std::shared_ptr<const std::vector<ColumnAxisBase<MSColumns> > > ms_shape,
-    std::shared_ptr<const ::MPI_Datatype> full_array_datatype,
-    std::shared_ptr<const ::MPI_Datatype> tail_array_datatype,
     std::shared_ptr<const std::vector<IterParams> > iter_params,
     std::shared_ptr<const std::optional<MSColumns> > inner_fileview_axis,
-    std::shared_ptr<const ::MPI_Datatype> full_fileview_datatype,
-    std::shared_ptr<const ::MPI_Datatype> tail_fileview_datatype,
     std::shared_ptr<const ArrayIndexer<MSColumns> > ms_indexer,
-    const MSColumns& outer_full_array_axis,
     int rank,
     std::size_t buffer_size,
     TraversalState&& traversal_state,
     bool debug_log)
-  : m_mpi_state(std::move(mpi_state))
-  , m_ms_shape(ms_shape)
-  , m_full_array_datatype(full_array_datatype)
-  , m_tail_array_datatype(tail_array_datatype)
-  , m_iter_params(iter_params)
-  , m_inner_fileview_axis(inner_fileview_axis)
-  , m_etype_datatype(datatype(MPI_CXX_FLOAT_COMPLEX))
-  , m_full_fileview_datatype(full_fileview_datatype)
-  , m_tail_fileview_datatype(tail_fileview_datatype)
-  , m_ms_indexer(ms_indexer)
-  , m_outer_full_array_axis(outer_full_array_axis)
-  , m_rank(rank)
-  , m_buffer_size(buffer_size)
-  , m_debug_log(debug_log)
-  , m_traversal_state(std::move(traversal_state)) {
-  }
-
-  Reader(
-    const Reader& state,
-    ReaderMPIState&& mpi_state,
-    TraversalState&& traversal_state)
     : m_mpi_state(std::move(mpi_state))
-    , m_ms_shape(state.m_ms_shape)
-    , m_full_array_datatype(state.m_full_array_datatype)
-    , m_tail_array_datatype(state.m_tail_array_datatype)
-    , m_iter_params(state.m_iter_params)
-    , m_inner_fileview_axis(state.m_inner_fileview_axis)
-    , m_etype_datatype(state.m_etype_datatype)
-    , m_full_fileview_datatype(state.m_full_fileview_datatype)
-    , m_tail_fileview_datatype(state.m_tail_fileview_datatype)
-    , m_ms_indexer(state.m_ms_indexer)
-    , m_outer_full_array_axis(state.m_outer_full_array_axis)
-    , m_rank(state.m_rank)
-    , m_buffer_size(state.m_buffer_size)
-    , m_debug_log(state.m_debug_log)
+    , m_ms_shape(ms_shape)
+    , m_iter_params(iter_params)
+    , m_inner_fileview_axis(inner_fileview_axis)
+    , m_etype_datatype(datatype(MPI_CXX_FLOAT_COMPLEX))
+    , m_ms_indexer(ms_indexer)
+    , m_rank(rank)
+    , m_buffer_size(buffer_size)
+    , m_debug_log(debug_log)
     , m_traversal_state(std::move(traversal_state)) {
   }
 
   Reader(const Reader& other)
     : m_mpi_state(other.m_mpi_state)
     , m_ms_shape(other.m_ms_shape)
-    , m_full_array_datatype(other.m_full_array_datatype)
-    , m_tail_array_datatype(other.m_tail_array_datatype)
     , m_iter_params(other.m_iter_params)
     , m_inner_fileview_axis(other.m_inner_fileview_axis)
     , m_etype_datatype(other.m_etype_datatype)
-    , m_full_fileview_datatype(other.m_full_fileview_datatype)
-    , m_tail_fileview_datatype(other.m_tail_fileview_datatype)
     , m_ms_indexer(other.m_ms_indexer)
-    , m_outer_full_array_axis(other.m_outer_full_array_axis)
     , m_rank(other.m_rank)
     , m_buffer_size(other.m_buffer_size)
     , m_debug_log(other.m_debug_log)
@@ -186,15 +191,10 @@ public:
   Reader(Reader&& other)
     : m_mpi_state(std::move(other).m_mpi_state)
     , m_ms_shape(std::move(other).m_ms_shape)
-    , m_full_array_datatype(std::move(other).m_full_array_datatype)
-    , m_tail_array_datatype(std::move(other).m_tail_array_datatype)
     , m_iter_params(std::move(other).m_iter_params)
     , m_inner_fileview_axis(std::move(other).m_inner_fileview_axis)
     , m_etype_datatype(std::move(other).m_etype_datatype)
-    , m_full_fileview_datatype(std::move(other).m_full_fileview_datatype)
-    , m_tail_fileview_datatype(std::move(other).m_tail_fileview_datatype)
     , m_ms_indexer(std::move(other).m_ms_indexer)
-    , m_outer_full_array_axis(std::move(other).m_outer_full_array_axis)
     , m_rank(std::move(other).m_rank)
     , m_buffer_size(std::move(other).m_buffer_size)
     , m_debug_log(std::move(other).m_debug_log)
@@ -216,17 +216,12 @@ public:
     std::lock_guard<decltype(m_mtx)> lock(m_mtx);
     m_mpi_state = std::move(other).m_mpi_state;
     m_ms_shape = std::move(other).m_ms_shape;
-    m_full_array_datatype = std::move(other).m_full_array_datatype;
-    m_tail_array_datatype = std::move(other).m_tail_array_datatype;
     m_rank = std::move(other).m_rank;
     m_buffer_size = std::move(other).m_buffer_size;
     m_iter_params = std::move(other).m_iter_params;
     m_inner_fileview_axis = std::move(other).m_inner_fileview_axis;
     m_etype_datatype = std::move(other).m_etype_datatype;
-    m_full_fileview_datatype = std::move(other).m_full_fileview_datatype;
-    m_tail_fileview_datatype = std::move(other).m_tail_fileview_datatype;
     m_ms_indexer = std::move(other).m_ms_indexer;
-    m_outer_full_array_axis = std::move(other).m_outer_full_array_axis;
     m_debug_log = std::move(other).m_debug_log;
     m_traversal_state = std::move(other).m_traversal_state;
     return *this;
@@ -364,15 +359,8 @@ public:
     return (
       m_ms_shape == other.m_ms_shape
       && m_inner_fileview_axis == other.m_inner_fileview_axis
-      && m_traversal_state == other.m_traversal_state
       && m_iter_params == other.m_iter_params
-      // comparing m_array_datatypes and m_fileview_datatypes would be ideal,
-      // but that could be a relatively expensive task, as it requires digging
-      // into the contents of the datatypes; instead, since those datatypes are
-      // functions of the MS shape, iteration order and outer array axis alone,
-      // given the previous comparisons, we can just compare the outer arrays
-      // axis values
-      && m_outer_full_array_axis == other.m_outer_full_array_axis
+      && m_traversal_state == other.m_traversal_state
       // and now the potentially really expensive test -- this is required by
       // semantics of an InputIterator
       && get() == other.get());
@@ -494,17 +482,12 @@ protected:
   read_next_buffer(::MPI_File file);
 
   mutable std::shared_ptr<const ::MPI_Datatype> m_buffer_datatype;
-  mutable int m_last_array_count;
 
 private:
 
   ReaderMPIState m_mpi_state;
 
   std::shared_ptr<const std::vector<ColumnAxisBase<MSColumns> > > m_ms_shape;
-
-  std::shared_ptr<const ::MPI_Datatype> m_full_array_datatype;
-
-  std::shared_ptr<const ::MPI_Datatype> m_tail_array_datatype;
 
   // ms array iteration definition, for this rank, in traversal order
   std::shared_ptr<const std::vector<IterParams> > m_iter_params;
@@ -513,13 +496,7 @@ private:
 
   std::shared_ptr<const ::MPI_Datatype> m_etype_datatype;
 
-  std::shared_ptr<const ::MPI_Datatype> m_full_fileview_datatype;
-
-  std::shared_ptr<const ::MPI_Datatype> m_tail_fileview_datatype;
-
   std::shared_ptr<const ArrayIndexer<MSColumns> > m_ms_indexer;
-
-  MSColumns m_outer_full_array_axis;
 
   int m_rank;
 

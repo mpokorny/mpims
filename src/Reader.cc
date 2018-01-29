@@ -181,7 +181,14 @@ Reader::begin(
     mpi_call(::MPI_File_set_errhandler, file, MPI_ERRORS_RETURN);
   }
 
-  TraversalState traversal_state(reduced_comm, iter_params);
+  TraversalState traversal_state(
+    reduced_comm,
+    iter_params,
+    outer_full_array_axis,
+    full_array_datatype,
+    tail_array_datatype,
+    full_fileview_datatype,
+    tail_fileview_datatype);
 
   std::for_each(
     std::begin(*iter_params),
@@ -194,14 +201,9 @@ Reader::begin(
     Reader(
       ReaderMPIState(reduced_comm, priv_info, file, path),
       std::make_shared<std::vector<ColumnAxisBase<MSColumns> > >(ms_shape),
-      full_array_datatype,
-      tail_array_datatype,
       iter_params,
       inner_fileview_axis,
-      full_fileview_datatype,
-      tail_fileview_datatype,
       ms_indexer,
-      outer_full_array_axis,
       rank,
       buffer_size,
       std::move(traversal_state),
@@ -265,17 +267,12 @@ Reader::swap(Reader& other) {
   std::lock_guard<decltype(other.m_mtx)> lock2(other.m_mtx);
   swap(m_ms_shape, other.m_ms_shape);
   swap(m_mpi_state, other.m_mpi_state);
-  swap(m_full_array_datatype, other.m_full_array_datatype);
-  swap(m_tail_array_datatype, other.m_tail_array_datatype);
   swap(m_rank, other.m_rank);
   swap(m_buffer_size, other.m_buffer_size);
   swap(m_iter_params, other.m_iter_params);
   swap(m_etype_datatype, other.m_etype_datatype);
   swap(m_inner_fileview_axis, other.m_inner_fileview_axis);
-  swap(m_full_fileview_datatype, other.m_full_fileview_datatype);
-  swap(m_tail_fileview_datatype, other.m_tail_fileview_datatype);
   swap(m_ms_indexer, other.m_ms_indexer);
-  swap(m_outer_full_array_axis, other.m_outer_full_array_axis);
   swap(m_debug_log, other.m_debug_log);
   swap(m_traversal_state, other.m_traversal_state);
 }
@@ -484,12 +481,12 @@ Reader::init_traversal_partitions(
 }
 
 std::unique_ptr<::MPI_Datatype, DatatypeDeleter>
-                                Reader::init_array_datatype(
-                                  const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
-                                  const std::shared_ptr<std::vector<IterParams> >& iter_params,
-                                  bool tail_array,
-                                  int rank,
-                                  bool debug_log) {
+Reader::init_array_datatype(
+  const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
+  const std::shared_ptr<std::vector<IterParams> >& iter_params,
+  bool tail_array,
+  int rank,
+  bool debug_log) {
 
   ArrayIndexer<MSColumns>::index index;
   std::for_each(
@@ -567,13 +564,13 @@ std::unique_ptr<::MPI_Datatype, DatatypeDeleter>
 }
 
 std::unique_ptr<::MPI_Datatype, DatatypeDeleter>
-                       Reader::init_fileview(
-                         const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
-                         const std::shared_ptr<std::vector<IterParams> >& iter_params,
-                         const std::shared_ptr<ArrayIndexer<MSColumns> >& ms_indexer,
-                         bool tail_fileview,
-                         int rank,
-                         bool debug_log) {
+Reader::init_fileview(
+  const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
+  const std::shared_ptr<std::vector<IterParams> >& iter_params,
+  const std::shared_ptr<ArrayIndexer<MSColumns> >& ms_indexer,
+  bool tail_fileview,
+  int rank,
+  bool debug_log) {
 
   bool needs_tail = false;
   ArrayIndexer<MSColumns>::index index;
@@ -740,10 +737,7 @@ Reader::set_fileview(::MPI_File file) const {
     oss << std::endl;
     std::clog << oss.str();
   }
-  const ::MPI_Datatype dt =
-    m_traversal_state.in_tail
-    ? *m_tail_fileview_datatype
-    : *m_full_fileview_datatype;
+  const ::MPI_Datatype dt = *m_traversal_state.fileview_datatype();
 
   mpi_call(
     ::MPI_File_set_view,
@@ -853,10 +847,7 @@ Reader::read_arrays(
     count = 0;
   }
 
-  auto dt =
-    m_traversal_state.in_tail
-    ? *m_tail_array_datatype
-    : *m_full_array_datatype;
+  auto dt = *m_traversal_state.array_datatype();
 
   ::MPI_Status status;
   mpi_call(
