@@ -157,6 +157,7 @@ public:
     ReaderMPIState&& mpi_state,
     std::shared_ptr<const std::vector<ColumnAxisBase<MSColumns> > > ms_shape,
     std::shared_ptr<const std::vector<IterParams> > iter_params,
+    std::shared_ptr<const std::vector<MSColumns> > buffer_order,
     std::shared_ptr<const std::optional<MSColumns> > inner_fileview_axis,
     std::shared_ptr<const ArrayIndexer<MSColumns> > ms_indexer,
     int rank,
@@ -166,6 +167,7 @@ public:
     : m_mpi_state(std::move(mpi_state))
     , m_ms_shape(ms_shape)
     , m_iter_params(iter_params)
+    , m_buffer_order(buffer_order)
     , m_inner_fileview_axis(inner_fileview_axis)
     , m_etype_datatype(datatype(MPI_CXX_FLOAT_COMPLEX))
     , m_ms_indexer(ms_indexer)
@@ -179,6 +181,7 @@ public:
     : m_mpi_state(other.m_mpi_state)
     , m_ms_shape(other.m_ms_shape)
     , m_iter_params(other.m_iter_params)
+    , m_buffer_order(other.m_buffer_order)
     , m_inner_fileview_axis(other.m_inner_fileview_axis)
     , m_etype_datatype(other.m_etype_datatype)
     , m_ms_indexer(other.m_ms_indexer)
@@ -192,6 +195,7 @@ public:
     : m_mpi_state(std::move(other).m_mpi_state)
     , m_ms_shape(std::move(other).m_ms_shape)
     , m_iter_params(std::move(other).m_iter_params)
+    , m_buffer_order(std::move(other).m_buffer_order)
     , m_inner_fileview_axis(std::move(other).m_inner_fileview_axis)
     , m_etype_datatype(std::move(other).m_etype_datatype)
     , m_ms_indexer(std::move(other).m_ms_indexer)
@@ -219,6 +223,7 @@ public:
     m_rank = std::move(other).m_rank;
     m_buffer_size = std::move(other).m_buffer_size;
     m_iter_params = std::move(other).m_iter_params;
+    m_buffer_order = std::move(other).m_buffer_order;
     m_inner_fileview_axis = std::move(other).m_inner_fileview_axis;
     m_etype_datatype = std::move(other).m_etype_datatype;
     m_ms_indexer = std::move(other).m_ms_indexer;
@@ -341,6 +346,7 @@ public:
     ::MPI_Info info,
     const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
     const std::vector<MSColumns>& traversal_order,
+    bool ms_buffer_order,
     std::unordered_map<MSColumns, DataDistribution>& pgrid,
     std::size_t max_buffer_size,
     bool debug_log = false);
@@ -360,6 +366,7 @@ public:
       m_ms_shape == other.m_ms_shape
       && m_inner_fileview_axis == other.m_inner_fileview_axis
       && m_iter_params == other.m_iter_params
+      && m_buffer_order == other.m_buffer_order
       && m_traversal_state == other.m_traversal_state
       // and now the potentially really expensive test -- this is required by
       // semantics of an InputIterator
@@ -453,6 +460,7 @@ protected:
     init_array_datatype(
       const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
       const std::shared_ptr<std::vector<IterParams> >& iter_params,
+      bool ms_buffer_order,
       bool tail_array,
       int rank,
       bool debug_log);
@@ -492,6 +500,9 @@ protected:
 
   mutable std::shared_ptr<const ::MPI_Datatype> m_buffer_datatype;
 
+  bool
+  buffer_order_compare(const MSColumns& col0, const MSColumns& col1);
+
 private:
 
   ReaderMPIState m_mpi_state;
@@ -500,6 +511,8 @@ private:
 
   // ms array iteration definition, for this rank, in traversal order
   std::shared_ptr<const std::vector<IterParams> > m_iter_params;
+
+  std::shared_ptr<const std::vector<MSColumns> > m_buffer_order;
 
   std::shared_ptr<const std::optional<MSColumns> > m_inner_fileview_axis;
 

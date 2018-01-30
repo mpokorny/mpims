@@ -272,56 +272,62 @@ main(int argc, char* argv[]) {
   int world_size;
   mpi_call(::MPI_Comm_size, MPI_COMM_WORLD, &world_size);
 
-  for (size_t t = 0; t < traversal_orders.size(); ++t) {
-    vector<MSColumns>& traversal_order = traversal_orders[t];
-    for (size_t b = 0; b < buffer_sizes.size(); ++b) {
-      ostringstream output;
-      size_t buffer_size = buffer_sizes[b];
-      output << "========= traversal_order "
-             << colnames(traversal_order)
-             << "; buffer_size "
-             << num_elements(buffer_size)
-             << " ========="
-             << endl;
-      auto reader =
-        Reader::begin(
-          argv[1],
-          MPI_COMM_WORLD,
-          MPI_INFO_NULL,
-          ms_shape,
-          traversal_order,
-          pgrid,
-          buffer_size
-          /* , true */);
-      while (reader != Reader::end()) {
-        const MSArray& array = *reader;
-        if (array.buffer) {
-          if (cb(array.blocks, array.buffer, output))
-            ++reader;
-          else
-            reader.interrupt();
-        }
-        else {
-          ++reader;
-        }
-      }
+  std::array<bool,2> ms_order{ false, true };
 
-      int output_rank = 0;
-      while (output_rank < world_size) {
-        if (output_rank == my_rank) {
-          if (world_size > 1)
-            cout << "*************** rank "
-                 << my_rank
-                 << " ***************"
-                 << endl;
-          cout << output.str();
+  for (bool& mso : ms_order) {
+    for (size_t t = 0; t < traversal_orders.size(); ++t) {
+      vector<MSColumns>& traversal_order = traversal_orders[t];
+      for (size_t b = 0; b < buffer_sizes.size(); ++b) {
+        ostringstream output;
+        size_t buffer_size = buffer_sizes[b];
+        output << "========= traversal_order "
+               << colnames(traversal_order)
+               << "; buffer_size "
+               << num_elements(buffer_size)
+               << (mso ? " (ms order)" : "")
+               << " ========="
+               << endl;
+        auto reader =
+          Reader::begin(
+            argv[1],
+            MPI_COMM_WORLD,
+            MPI_INFO_NULL,
+            ms_shape,
+            traversal_order,
+            mso,
+            pgrid,
+            buffer_size
+            /* , true */);
+        while (reader != Reader::end()) {
+          const MSArray& array = *reader;
+          if (array.buffer) {
+            if (cb(array.blocks, array.buffer, output))
+              ++reader;
+            else
+              reader.interrupt();
+          }
+          else {
+            ++reader;
+          }
         }
-        ++output_rank;
-        mpi_call(::MPI_Barrier, MPI_COMM_WORLD);
+
+        int output_rank = 0;
+        while (output_rank < world_size) {
+          if (output_rank == my_rank) {
+            if (world_size > 1)
+              cout << "*************** rank "
+                   << my_rank
+                   << " ***************"
+                   << endl;
+            cout << output.str();
+          }
+          ++output_rank;
+          mpi_call(::MPI_Barrier, MPI_COMM_WORLD);
+        }
       }
     }
   }
   ::MPI_Finalize();
 
-  return 0;
+return 0;
 }
