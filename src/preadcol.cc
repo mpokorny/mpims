@@ -259,7 +259,7 @@ parse_options(
   return true;
 }
 
-void
+unsigned
 read_all(
   std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
   std::vector<MSColumns>& traversal_order,
@@ -267,6 +267,7 @@ read_all(
   std::size_t buffer_size,
   std::string ms_path) {
 
+  unsigned result = 0;
   try {
     auto reader =
       Reader::begin(
@@ -277,6 +278,7 @@ read_all(
         traversal_order,
         pgrid,
         buffer_size, true);
+    result = reader.num_ranks();
     while (reader != Reader::end()) {
       const MSArray& array __attribute__((unused)) = *reader;
       ++reader;
@@ -284,6 +286,7 @@ read_all(
   } catch (std::exception& e) {
     std::cerr << "Execution failed: " << e.what() << std::endl;
   }
+  return result;
 }
 
 double
@@ -367,25 +370,34 @@ main(int argc, char *argv[]) {
     ::MPI_Comm_set_errhandler(MPI_COMM_WORLD, MPI_ERRORS_RETURN);
 
     mpi_call(::MPI_Barrier, MPI_COMM_WORLD);
-    Times times =
-      std::get<1>(
-        timeit(
-          [&]() {
-            read_all(ms_shape,
-                     traversal_order,
-                     pgrid,
-                     max_buffer_size,
-                     ms_path);
-            mpi_call(::MPI_Barrier, MPI_COMM_WORLD);
-            return true;
-          }));
+    Times times;
+    unsigned num_ranks;
+    std::tie(num_ranks, times) =
+      timeit(
+        [&]() {
+          unsigned n =
+            read_all(ms_shape, traversal_order, pgrid, max_buffer_size, ms_path);
+          mpi_call(::MPI_Barrier, MPI_COMM_WORLD);
+          return n;
+        });
 
     int rank;
     mpi_call(::MPI_Comm_rank, MPI_COMM_WORLD, &rank);
+    std::array<double,2> tarray{ times.user, times.system };
+    mpi_call(
+      ::MPI_Reduce,
+      (rank == 0) ? MPI_IN_PLACE : tarray.data(),
+      tarray.data(),
+      tarray.size(),
+      MPI_DOUBLE,
+      MPI_SUM,
+      0,
+      MPI_COMM_WORLD);
     if (rank == 0)
-      std::cout << "real time: " << times.real << " sec" << std::endl
-                << "user time: " << times.user << std::endl
-                << "system time: " << times.system << " sec" << std::endl;
+      std::cout << num_ranks << " reader processes" << std::endl
+                << "real time: " << times.real << " sec" << std::endl
+                << "total user time: " << tarray[0] << " sec" << std::endl
+                << "total system time: " << tarray[1] << " sec" << std::endl;
 
     ::MPI_Finalize();
   }
