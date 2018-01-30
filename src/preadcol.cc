@@ -33,6 +33,7 @@ suffix_multiplier(const std::string& suffix) {
   constexpr std::size_t MiB = KiB << 10;
   constexpr std::size_t GB = 1000 * MB;
   constexpr std::size_t GiB = MiB << 10;
+  constexpr std::size_t vis = sizeof(std::complex<float>);
 
   std::unordered_map<std::string, std::size_t> multipliers = {
     {"k", KB}, {"K", KB}, {"kB", KB}, {"KB", KB},
@@ -40,9 +41,13 @@ suffix_multiplier(const std::string& suffix) {
     {"m", MB}, {"M", MB}, {"mB", MB}, {"MB", MB},
     {"mi", MiB}, {"Mi", MiB}, {"miB", MiB}, {"MiB", MiB},
     {"g", GB}, {"G", GB}, {"gB", GB}, {"GB", GB},
-    {"gi", GiB}, {"Gi", GiB}, {"giB", GiB}, {"GiB", GiB}
+    {"gi", GiB}, {"Gi", GiB}, {"giB", GiB}, {"GiB", GiB},
+    {"v", vis}, {"V", vis}
   };
-  return multipliers[suffix];
+  if (suffix.empty())
+    return vis;
+  else
+    return multipliers[suffix];
 }
 
 std::size_t
