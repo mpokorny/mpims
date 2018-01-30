@@ -113,19 +113,25 @@ Reader::begin(
   while (!ip->fully_in_array) ++ip;
   MSColumns outer_full_array_axis = ip->axis;
   if (debug_log) {
-    std::clog << "outer full array axis "
-              << mscol_nickname(outer_full_array_axis)
-              << std::endl;
-    std::clog << "read " << array_read->buffer_capacity
-              << " arrays at " << mscol_nickname(array_read->axis)
-              << std::endl;
+    std::ostringstream out;
+    out << "(" << rank << ") "
+        << "outer full array axis "
+        << mscol_nickname(outer_full_array_axis)
+        << std::endl;
+    out << "(" << rank << ") "
+        << "read " << array_read->buffer_capacity
+        << " arrays at " << mscol_nickname(array_read->axis)
+        << std::endl;
     if (inner_fileview_axis->has_value())
-      std::clog << "m_inner_fileview_axis "
-                << mscol_nickname(inner_fileview_axis->value())
-                << std::endl;
+      out << "(" << rank << ") "
+          << "m_inner_fileview_axis "
+          << mscol_nickname(inner_fileview_axis->value())
+          << std::endl;
     else
-      std::clog << "no inner_fileview_axis"
-                << std::endl;
+      out << "(" << rank << ") "
+          << "no inner_fileview_axis"
+          << std::endl;
+    std::clog << out.str();
   }
 
   std::shared_ptr<::MPI_Datatype> full_fileview_datatype =
@@ -429,17 +435,19 @@ Reader::init_traversal_partitions(
     * sizeof(std::complex<float>);
 
   if (debug_log) {
-    std::clog << "(" << rank << ") ";
+    std::ostringstream out;
     std::for_each(
       std::begin(*iter_params),
       std::end(*iter_params),
-      [](auto& ip) {
-        std::clog << mscol_nickname(ip.axis)
-                  << " capacity " << ip.buffer_capacity
-                  << ", fully_in " << ip.fully_in_array
-                  << ", array_len " << ip.array_length
-                  << std::endl;
+      [&out, &rank](auto& ip) {
+        out << "(" << rank << ") "
+            << mscol_nickname(ip.axis)
+            << " capacity " << ip.buffer_capacity
+            << ", fully_in " << ip.fully_in_array
+            << ", array_len " << ip.array_length
+            << std::endl;
       });
+    std::clog << out.str();
   }
 
   // determine which axes are out of order with respect to the MS order
