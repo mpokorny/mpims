@@ -229,7 +229,19 @@ parse_options(
       break;
 
     case 'g':
-      pgrid = parse_distribution(token_sep, spec_sep, argv[current_optind]);
+      try {
+        auto eq = strchr(argv[current_optind], '=');
+        pgrid =
+          parse_distribution(
+          token_sep,
+          spec_sep,
+          eq ? eq + 1 : argv[current_optind + 1]);
+      } catch (const std::exception& e) {
+        std::cerr << "Failed to parse grid: "
+                  << e.what() << std::endl;
+        std::cout << usage.str();
+        return false;
+      }
       break;
 
     case '?':
@@ -255,18 +267,22 @@ read_all(
   std::size_t buffer_size,
   std::string ms_path) {
 
-  auto reader =
-    Reader::begin(
-      ms_path,
-      MPI_COMM_WORLD,
-      MPI_INFO_NULL,
-      ms_shape,
-      traversal_order,
-      pgrid,
-      buffer_size);
-  while (reader != Reader::end()) {
-    const MSArray& array __attribute__((unused)) = *reader;
-    ++reader;
+  try {
+    auto reader =
+      Reader::begin(
+        ms_path,
+        MPI_COMM_WORLD,
+        MPI_INFO_NULL,
+        ms_shape,
+        traversal_order,
+        pgrid,
+        buffer_size, true);
+    while (reader != Reader::end()) {
+      const MSArray& array __attribute__((unused)) = *reader;
+      ++reader;
+    }
+  } catch (std::exception& e) {
+    std::cerr << "Execution failed: " << e.what() << std::endl;
   }
 }
 
@@ -350,15 +366,19 @@ main(int argc, char *argv[]) {
     ::MPI_Init(&argc, &argv);
     ::MPI_Comm_set_errhandler(MPI_COMM_WORLD, MPI_ERRORS_RETURN);
 
-    Times times;
     mpi_call(::MPI_Barrier, MPI_COMM_WORLD);
-    std::tie(std::ignore, times) =
-      timeit(
-        [&]() {
-          read_all(ms_shape, traversal_order, pgrid, max_buffer_size, ms_path);
-          mpi_call(::MPI_Barrier, MPI_COMM_WORLD);
-          return true;
-        });
+    Times times =
+      std::get<1>(
+        timeit(
+          [&]() {
+            read_all(ms_shape,
+                     traversal_order,
+                     pgrid,
+                     max_buffer_size,
+                     ms_path);
+            mpi_call(::MPI_Barrier, MPI_COMM_WORLD);
+            return true;
+          }));
 
     int rank;
     mpi_call(::MPI_Comm_rank, MPI_COMM_WORLD, &rank);
