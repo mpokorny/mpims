@@ -185,6 +185,24 @@ Reader::begin(
       priv_info,
       &file);
     mpi_call(::MPI_File_set_errhandler, file, MPI_ERRORS_RETURN);
+    if (debug_log && rank == 0) {
+      MPI_Info info_used;
+      mpi_call(::MPI_File_get_info, file, &info_used);
+      std::array<char,80> value;
+      int flag;
+      mpi_call(
+        ::MPI_Info_get,
+        info_used,
+        "romio_filesystem_type",
+        value.size() - 1,
+        value.data(),
+        &flag);
+      if (flag != 0)
+        std::clog << "ROMIO filesystem type: " << value.data() << std::endl;
+      else
+        std::clog << "No ROMIO filesystem type" << std::endl;
+      mpi_call(::MPI_Info_free, &info_used);
+    }
   }
 
   TraversalState traversal_state(
