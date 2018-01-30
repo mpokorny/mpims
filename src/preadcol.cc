@@ -1,5 +1,7 @@
 /* -*- mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; -*- */
 #include <algorithm>
+#include <complex>
+#include <cmath>
 #include <ctime>
 #include <forward_list>
 #include <iostream>
@@ -10,8 +12,10 @@
 #include <vector>
 
 #include <getopt.h>
+#include <time.h>
 #include <unistd.h>
-#include <sys/times.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 
 #include <mpims.h>
 #include <ColumnAxis.h>
@@ -261,6 +265,58 @@ read_all(
   }
 }
 
+double
+rnd(double t, double precision) {
+  return std::round(t / precision) * precision;
+}
+
+double
+ms(double t) {
+  return rnd(t, 1.0e-3);
+}
+
+double
+timespecd(const struct timespec& ts) {
+  return ts.tv_sec + 1.0e-9 * ts.tv_nsec;
+}
+
+double
+diff_timespec_ms(const struct timespec& t1, const struct timespec& t0) {
+  return ms(timespecd(t1) - timespecd(t0));
+}
+
+double
+timevald(const struct timeval& ts) {
+  return ts.tv_sec + 1.0e-6 * ts.tv_usec;
+}
+
+double
+diff_timeval_ms(const struct timeval& t1, const struct timeval& t0) {
+  return ms(timevald(t1) - timevald(t0));
+}
+
+struct Times {
+  double real, user, system;
+};
+
+template <typename F, typename ...Args>
+std::tuple<std::invoke_result_t<F, Args...>, Times>
+timeit(const F& f, Args...args) {
+  typedef std::invoke_result_t<F, Args...> A;
+  struct timespec ts[2];
+  struct rusage ru[2];
+
+  clock_gettime(CLOCK_MONOTONIC_COARSE, &ts[0]);
+  getrusage(RUSAGE_SELF, &ru[0]);
+  A a = f(args...);
+  getrusage(RUSAGE_SELF, &ru[1]);
+  clock_gettime(CLOCK_MONOTONIC_COARSE, &ts[1]);
+  double real = diff_timespec_ms(ts[1], ts[0]);
+  double user = diff_timeval_ms(ru[1].ru_utime, ru[0].ru_utime);
+  double system = diff_timeval_ms(ru[1].ru_stime, ru[0].ru_stime);
+  return std::make_tuple(a, Times{real, user, system});
+}
+
 int
 main(int argc, char *argv[]) {
 
@@ -289,30 +345,23 @@ main(int argc, char *argv[]) {
     ::MPI_Init(&argc, &argv);
     ::MPI_Comm_set_errhandler(MPI_COMM_WORLD, MPI_ERRORS_RETURN);
 
+    Times times;
+    mpi_call(::MPI_Barrier, MPI_COMM_WORLD);
+    std::tie(std::ignore, times) =
+      timeit(
+        [&]() {
+          read_all(ms_shape, traversal_order, pgrid, max_buffer_size, ms_path);
+          mpi_call(::MPI_Barrier, MPI_COMM_WORLD);
+          return true;
+        });
+
     int rank;
     mpi_call(::MPI_Comm_rank, MPI_COMM_WORLD, &rank);
+    if (rank == 0)
+      std::cout << "real time: " << times.real << " sec" << std::endl
+                << "user time: " << times.user << std::endl
+                << "system time: " << times.system << " sec" << std::endl;
 
-    long clk_tck = sysconf(_SC_CLK_TCK);
-    clock_t t0, t1;
-    struct tms tms0, tms1;
-
-    mpi_call(::MPI_Barrier, MPI_COMM_WORLD);
-    t0 = times(&tms0);
-    read_all(ms_shape, traversal_order, pgrid, max_buffer_size, ms_path);
-    mpi_call(::MPI_Barrier, MPI_COMM_WORLD);
-    t1 = times(&tms1);
-
-    if (rank == 0){
-      std::cout << "real time: "
-        << static_cast<double>(t1 - t0) / clk_tck
-                << " sec" << std::endl;
-      std::cout << "user time: "
-        << static_cast<double>(tms1.tms_utime - tms0.tms_utime) / clk_tck
-                << " sec" << std::endl;
-      std::cout << "system time: "
-        << static_cast<double>(tms1.tms_stime - tms0.tms_stime) / clk_tck
-                << " sec" << std::endl;
-    }
     ::MPI_Finalize();
   }
 }
