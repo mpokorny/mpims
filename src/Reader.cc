@@ -916,19 +916,22 @@ Reader::advance_to_next_buffer(::MPI_File file) {
 void
 Reader::advance_to_buffer_end() {
   // assume that m_mtx is locked
-  AxisIter& axis_iter = m_traversal_state.axis_iters.top();
-  MSColumns axis = axis_iter.params->axis;
-  axis_iter.increment(m_traversal_state.max_count);
-  m_traversal_state.data_index[axis] = axis_iter.index;
+  AxisIter* axis_iter = &m_traversal_state.axis_iters.top();
+  axis_iter->increment(m_traversal_state.max_count);
+  m_traversal_state.data_index[axis_iter->params->axis] = axis_iter->index;
   while (
     !m_traversal_state.eof
     && !m_traversal_state.axis_iters.empty()
-    && axis_iter.at_end) {
+    && axis_iter->at_end) {
 
-    m_traversal_state.data_index[axis] = axis_iter.params->origin;
+    m_traversal_state.data_index[axis_iter->params->axis] =
+      axis_iter->params->origin;
     m_traversal_state.axis_iters.pop();
-    if (!m_traversal_state.axis_iters.empty())
-      m_traversal_state.axis_iters.top().increment();
+    if (!m_traversal_state.axis_iters.empty()) {
+      axis_iter = &m_traversal_state.axis_iters.top();
+      axis_iter->increment();
+      m_traversal_state.data_index[axis_iter->params->axis] = axis_iter->index;
+    }
   }
 }
 
