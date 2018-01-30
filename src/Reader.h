@@ -371,6 +371,15 @@ public:
     return !operator==(other);
   }
 
+  unsigned
+  num_ranks() const {
+    unsigned result;
+    auto handles = m_mpi_state.handles();
+    std::lock_guard<MPIHandles> lck(*handles);
+    mpi_call(::MPI_Comm_size, handles->comm, reinterpret_cast<int*>(&result));
+    return result;
+  }
+
   bool
   at_end() const;
 
