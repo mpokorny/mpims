@@ -68,3 +68,14 @@ target_compile_options(reader-test PRIVATE
 target_link_libraries(reader-test
   ${MPI_CXX_LIBRARIES}
   mpims)
+
+add_executable(preadcol
+  preadcol.cc)
+target_include_directories(preadcol PRIVATE
+  ${MPI_CXX_INCLUDE_PATH}
+  .)
+target_compile_options(preadcol PRIVATE
+  ${MPI_CXX_COMPILE_FLAGS})
+target_link_libraries(preadcol
+  ${MPI_CXX_LIBRARIES}
+  mpims)
