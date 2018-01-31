@@ -178,17 +178,30 @@ Reader::begin(
   std::shared_ptr<std::vector<MSColumns> > buffer_order(
     new std::vector<MSColumns>) ;
   if (ms_buffer_order)
-    std::transform(
+    std::for_each(
       std::begin(ms_shape),
       std::end(ms_shape),
-      std::back_inserter(*buffer_order),
-      [](auto& ax) { return ax.id(); });
+      [&iter_params, &buffer_order](auto& ax) {
+        auto axid = ax.id();
+        auto ip =
+          std::find_if(
+            std::begin(*iter_params),
+            std::end(*iter_params),
+            [&axid](auto& ip) {
+              return ip.axis == axid;
+            });
+        if (ip != std::end(*iter_params)
+            && (ip->buffer_capacity > 0 || ip->fully_in_array))
+          buffer_order->emplace_back(ip->axis);
+      });
   else
-    std::transform(
+    std::for_each(
       std::begin(*iter_params),
       std::end(*iter_params),
-      std::back_inserter(*buffer_order),
-      [](auto &ip) { return ip.axis; });
+      [&buffer_order](auto &ip) {
+        if (ip.buffer_capacity > 0 || ip.fully_in_array)
+          buffer_order->emplace_back(ip.axis);
+      });
 
   ::MPI_File file = MPI_FILE_NULL;
   ::MPI_Info priv_info = info;
@@ -997,7 +1010,7 @@ Reader::read_next_buffer(::MPI_File file) {
   advance_to_next_buffer(file);
   std::shared_ptr<std::complex<float> > buffer;
   auto blocks = m_traversal_state.blocks();
-  std::sort(
+  std::stable_sort(
     std::begin(blocks),
     std::end(blocks),
     [this](const IndexBlockSequence<MSColumns>& ibs0,
@@ -1012,7 +1025,11 @@ bool
 Reader::buffer_order_compare(const MSColumns& col0, const MSColumns& col1) {
   auto p0 =
     std::find(std::begin(*m_buffer_order), std::end(*m_buffer_order), col0);
+  if (p0 == std::end(*m_buffer_order))
+    return true;
   auto p1 =
     std::find(std::begin(*m_buffer_order), std::end(*m_buffer_order), col1);
+  if (p1 == std::end(*m_buffer_order))
+    return false;
   return p0 < p1;
 }
