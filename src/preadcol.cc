@@ -424,12 +424,19 @@ main(int argc, char *argv[]) {
       MPI_SUM,
       0,
       MPI_COMM_WORLD);
-    if (rank == 0)
-      std::cout << num_ranks << " reader processes" << std::endl
-                << "real time: " << times.real << " sec" << std::endl
-                << "total user time: " << tarray[0] << " sec" << std::endl
-                << "total system time: " << tarray[1] << " sec" << std::endl;
-
+    if (rank == 0) {
+      std::cout << num_ranks << " reader process"
+                << ((num_ranks > 1) ? "es" : "") << std::endl;
+      std::cout << "real time: " << times.real << " sec" << std::endl;
+      std::cout << "total user time: " << tarray[0] << " sec";
+      if (num_ranks > 1)
+        std::cout << " (" << tarray[0] / num_ranks << " sec avg)";
+      std::cout << std::endl;
+      std::cout << "total system time: " << tarray[1] << " sec";
+      if (num_ranks > 1)
+        std::cout << " (" << tarray[1] / num_ranks << " sec avg)";
+      std::cout << std::endl;
+    }
     ::MPI_Finalize();
   }
 }
