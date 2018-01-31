@@ -724,8 +724,10 @@ Reader::init_fileview(
         index[ip->axis] += ip->stride;
         auto is = ms_indexer->offset_of_(index);
         index[ip->axis] -= ip->stride;
-        auto stride = (is - i0) * sizeof(std::complex<float>);
-        if (block_len * unit_stride == stride) {
+        auto hstride = (is - i0) * sizeof(std::complex<float>);
+        auto stride = (is - i0) / (i1 - i0);
+        if (block_len * unit_stride == hstride) {
+          // vector without gaps
           result = datatype();
           mpi_call(
             ::MPI_Type_contiguous,
@@ -733,9 +735,10 @@ Reader::init_fileview(
             *dt1,
             result.get());
         } else if (terminal_block_len == block_len) {
+          // uniform blocked vector
           result = datatype();
           mpi_call(
-            ::MPI_Type_create_hvector,
+            ::MPI_Type_vector,
             num_blocks,
             block_len,
             stride,
@@ -747,7 +750,7 @@ Reader::init_fileview(
           assert(num_blocks > 1);
           auto dt2 = datatype();
           mpi_call(
-            ::MPI_Type_create_hvector,
+            ::MPI_Type_vector,
             num_blocks - 1,
             block_len,
             stride,
@@ -760,7 +763,7 @@ Reader::init_fileview(
               terminal_block_len,
               *dt1,
               dt3.get());
-            auto terminal_displacement = stride * (num_blocks - 1);
+            auto terminal_displacement = hstride * (num_blocks - 1);
             std::vector<int> blocklengths {1, 1};
             std::vector<::MPI_Aint> displacements {
               0, static_cast<::MPI_Aint>(terminal_displacement)};
