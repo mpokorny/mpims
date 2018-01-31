@@ -155,14 +155,19 @@ parse_options(
   std::vector<MSColumns>& traversal_order,
   std::unordered_map<MSColumns, DataDistribution>& pgrid,
   std::size_t& buffer_size,
-  std::string& ms_path) {
+  std::string& ms_path,
+  bool& ms_buffer_order,
+  bool& debug_log) {
 
   int opt;
   struct option long_options[] = {
     {"msshape", required_argument, &opt, 's'},
     {"order", required_argument, &opt, 'o'},
-    {"grid", optional_argument, nullptr, 'g'},
+    {"grid", required_argument, &opt, 'g'},
     {"buffer", required_argument, &opt, 'b'},
+    {"transpose", no_argument, nullptr, 't'},
+    {"no-transpose", no_argument, nullptr, -'t'},
+    {"verbose", no_argument, nullptr, 'v'},
     {"help", optional_argument, nullptr, 'h'}
   };
 
@@ -170,16 +175,20 @@ parse_options(
   usage << "Usage: " << argv[0] << std::endl
         << "  (--msshape | -s) <ms-shape>" << std::endl
         << "  (--order |-o) <traversal-order>" << std::endl
-        << "  [(--grid |-g) <distribution>]" << std::endl
         << "  (--buffer | -b) <buffer-size>" << std::endl
+        << "  [(--grid |-g) <distribution>]" << std::endl
+        << "  [((--transpose | -t) | --no-transpose)]" << std::endl
+        << "  [(--verbose | -v)]" << std::endl
         << "  <ms-data-column-file>" << std::endl;
-  
+
+  ms_buffer_order = true;
+  debug_log = false;
   bool got_shape = false, got_order = false, got_buffer = false;
   ms_path = "";
 
   while (1) {
     opt = 0;
-    int c = getopt_long(argc, argv, "s:o:g::b:h", long_options, nullptr);
+    int c = getopt_long(argc, argv, "s:o:g::b:tvh", long_options, nullptr);
 
     if (c == -1) {
       ms_path = argv[optind];
@@ -189,13 +198,14 @@ parse_options(
     int current_optind = optind - 1;
 
     switch (c) {
-    case 0:
+    case 0: {
+      auto eq = strchr(argv[current_optind], '=');
+      auto val = (eq ? eq + 1 : argv[current_optind]);
+
       switch (opt) {
       case 's':
         try {
-          auto eq = strchr(argv[current_optind], '=');
-          ms_shape =
-            parse_shape(token_sep, spec_sep, eq ? eq + 1 : argv[current_optind]);
+          ms_shape = parse_shape(token_sep, spec_sep, val);
           got_shape = true;
         } catch (const std::exception& e) {
           std::cerr << "Failed to parse MS shape: "
@@ -205,9 +215,7 @@ parse_options(
 
       case 'o':
         try {
-          auto eq = strchr(argv[current_optind], '=');
-          traversal_order =
-            parse_traversal(token_sep, eq ? eq + 1 : argv[current_optind]);
+          traversal_order = parse_traversal(token_sep, val);
           got_order = true;
         } catch (const std::exception& e) {
           std::cerr << "Failed to parse traversal order: "
@@ -217,31 +225,38 @@ parse_options(
 
       case 'b':
         try {
-          auto eq = strchr(argv[current_optind], '=');
-          buffer_size = parse_buffer_size(eq ? eq + 1: argv[current_optind]);
+          buffer_size = parse_buffer_size(val);
           got_buffer = true;
         } catch (const std::exception& e) {
           std::cerr << "Failed to parse buffer size: "
                     << e.what() << std::endl;
         }
         break;
+
+      case 'g':
+        try {
+          pgrid = parse_distribution(token_sep, spec_sep, val);
+        } catch (const std::exception& e) {
+          std::cerr << "Failed to parse grid: "
+                    << e.what() << std::endl;
+          std::cout << usage.str();
+          return false;
+        }
+        break;
       };
       break;
+    }
 
-    case 'g':
-      try {
-        auto eq = strchr(argv[current_optind], '=');
-        pgrid =
-          parse_distribution(
-          token_sep,
-          spec_sep,
-          eq ? eq + 1 : argv[current_optind + 1]);
-      } catch (const std::exception& e) {
-        std::cerr << "Failed to parse grid: "
-                  << e.what() << std::endl;
-        std::cout << usage.str();
-        return false;
-      }
+    case 't':
+      ms_buffer_order = false;
+      break;
+
+    case -'t':
+      ms_buffer_order = true;
+      break;
+
+    case 'v':
+      debug_log = true;
       break;
 
     case '?':
@@ -265,9 +280,12 @@ read_all(
   std::vector<MSColumns>& traversal_order,
   std::unordered_map<MSColumns, DataDistribution>& pgrid,
   std::size_t buffer_size,
-  std::string ms_path) {
+  std::string ms_path,
+  bool ms_buffer_order,
+  bool debug_log) {
 
   unsigned result = 0;
+
   try {
     auto reader =
       Reader::begin(
@@ -276,8 +294,10 @@ read_all(
         MPI_INFO_NULL,
         ms_shape,
         traversal_order,
+        ms_buffer_order,
         pgrid,
-        buffer_size, true);
+        buffer_size,
+        debug_log);
     result = reader.num_ranks();
     while (reader != Reader::end()) {
       const MSArray& array __attribute__((unused)) = *reader;
@@ -352,6 +372,8 @@ main(int argc, char *argv[]) {
   std::unordered_map<MSColumns, DataDistribution> pgrid;
   std::size_t max_buffer_size;
   std::string ms_path;
+  bool ms_buffer_order;
+  bool debug_log;
 
   bool options_ok =
     parse_options(
@@ -363,7 +385,9 @@ main(int argc, char *argv[]) {
       traversal_order,
       pgrid,
       max_buffer_size,
-      ms_path);
+      ms_path,
+      ms_buffer_order,
+      debug_log);
 
   if (options_ok) {
     ::MPI_Init(&argc, &argv);
@@ -376,7 +400,14 @@ main(int argc, char *argv[]) {
       timeit(
         [&]() {
           unsigned n =
-            read_all(ms_shape, traversal_order, pgrid, max_buffer_size, ms_path);
+            read_all(
+              ms_shape,
+              traversal_order,
+              pgrid,
+              max_buffer_size,
+              ms_path,
+              ms_buffer_order,
+              debug_log);
           mpi_call(::MPI_Barrier, MPI_COMM_WORLD);
           return n;
         });
