@@ -46,7 +46,9 @@ public:
       const std::shared_ptr<const std::vector<IterParams> >& iter_params_,
       MSColumns& outer_full_array_axis_,
       const std::shared_ptr<const ::MPI_Datatype>& full_array_datatype,
+      unsigned full_array_dt_count,
       const std::shared_ptr<const ::MPI_Datatype>& tail_array_datatype,
+      unsigned tail_array_dt_count,
       const std::shared_ptr<const ::MPI_Datatype>& full_fileview_datatype,
       const std::shared_ptr<const ::MPI_Datatype>& tail_fileview_datatype)
       : eof(comm == MPI_COMM_NULL)
@@ -58,7 +60,9 @@ public:
       , in_tail(false)
       , outer_full_array_axis(outer_full_array_axis_)
       , m_full_array_datatype(full_array_datatype)
+      , m_full_array_dt_count(full_array_dt_count)
       , m_tail_array_datatype(tail_array_datatype)
+      , m_tail_array_dt_count(tail_array_dt_count)
       , m_full_fileview_datatype(full_fileview_datatype)
       , m_tail_fileview_datatype(tail_fileview_datatype) {
     }
@@ -83,14 +87,17 @@ public:
 
     MSColumns outer_full_array_axis;
 
-    std::shared_ptr<const ::MPI_Datatype>
+    std::tuple<std::shared_ptr<const ::MPI_Datatype>, unsigned>
     array_datatype() const {
-      return in_tail ? m_tail_array_datatype : m_full_array_datatype;
+      if (in_tail)
+        return std::make_tuple(m_tail_array_datatype, m_tail_array_dt_count);
+      else
+        return std::make_tuple(m_full_array_datatype, m_full_array_dt_count);
     }
 
     std::shared_ptr<const ::MPI_Datatype>
     fileview_datatype() const {
-      return in_tail ? m_tail_fileview_datatype : m_full_fileview_datatype;
+      return (in_tail ? m_tail_fileview_datatype : m_full_fileview_datatype);
     }
 
     bool
@@ -103,6 +110,8 @@ public:
         && data_index == other.data_index
         && axis_iters == other.axis_iters
         && in_tail == other.in_tail
+        && m_tail_array_dt_count == other.m_tail_array_dt_count
+        && m_full_array_dt_count == other.m_full_array_dt_count
         // comparing array datatypes and fileview datatypes would be ideal, but
         // that could be a relatively expensive task, as it requires digging
         // into the contents of the datatypes; instead, since those datatypes
@@ -142,7 +151,11 @@ public:
 
     std::shared_ptr<const ::MPI_Datatype> m_full_array_datatype;
 
+    unsigned m_full_array_dt_count;
+
     std::shared_ptr<const ::MPI_Datatype> m_tail_array_datatype;
+
+    unsigned m_tail_array_dt_count;
 
     std::shared_ptr<const ::MPI_Datatype> m_full_fileview_datatype;
 
@@ -456,7 +469,7 @@ protected:
     int rank,
     bool debug_log);
 
-  static std::unique_ptr<::MPI_Datatype, DatatypeDeleter>
+  static std::tuple<std::unique_ptr<::MPI_Datatype, DatatypeDeleter>, unsigned>
     init_array_datatype(
       const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
       const std::shared_ptr<std::vector<IterParams> >& iter_params,
