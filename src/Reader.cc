@@ -717,14 +717,22 @@ Reader::init_fileview(
           dt1 = std::move(result);
         }
 
-        // create blocked vector of fileview_datatype elements
+        // buffer capacity is assumed to be a multiple of block_len
+        assert(ip->buffer_capacity % ip->block_len == 0);
+
+        // create (blocked) vector of fileview_datatype elements
         index[ip->axis] += ip->stride;
         auto is = ms_indexer->offset_of_(index);
         index[ip->axis] -= ip->stride;
         auto stride = (is - i0) * sizeof(std::complex<float>);
-        if (terminal_block_len == block_len) {
-          // buffer capacity is assumed to be a multiple of block_len
-          assert(ip->buffer_capacity % ip->block_len == 0);
+        if (block_len * unit_stride == stride) {
+          result = datatype();
+          mpi_call(
+            ::MPI_Type_contiguous,
+            count,
+            *dt1,
+            result.get());
+        } else if (terminal_block_len == block_len) {
           result = datatype();
           mpi_call(
             ::MPI_Type_create_hvector,
