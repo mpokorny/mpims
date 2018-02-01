@@ -268,7 +268,6 @@ Reader::begin(
       buffer_order,
       inner_fileview_axis,
       ms_indexer,
-      rank,
       buffer_size,
       std::move(traversal_state),
       debug_log);

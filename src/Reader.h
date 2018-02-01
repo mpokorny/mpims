@@ -173,7 +173,6 @@ public:
     std::shared_ptr<const std::vector<MSColumns> > buffer_order,
     std::shared_ptr<const std::optional<MSColumns> > inner_fileview_axis,
     std::shared_ptr<const ArrayIndexer<MSColumns> > ms_indexer,
-    int rank,
     std::size_t buffer_size,
     TraversalState&& traversal_state,
     bool debug_log)
@@ -184,10 +183,11 @@ public:
     , m_inner_fileview_axis(inner_fileview_axis)
     , m_etype_datatype(datatype(MPI_CXX_FLOAT_COMPLEX))
     , m_ms_indexer(ms_indexer)
-    , m_rank(rank)
     , m_buffer_size(buffer_size)
     , m_debug_log(debug_log)
     , m_traversal_state(std::move(traversal_state)) {
+    auto comm = m_mpi_state.handles()->comm;
+    mpi_call(::MPI_Comm_rank, comm, reinterpret_cast<int*>(&m_rank));
   }
 
   Reader(const Reader& other)
