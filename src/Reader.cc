@@ -564,26 +564,45 @@ Reader::init_array_datatype(
       index[ip.axis] = 0;
     });
 
-  std::size_t total_buffer_size = 1;
+  // order iter_params to establish the axis ordering in buffer
+  std::vector<const IterParams*> reordered_ips;
+  if (ms_buffer_order)
+    std::transform(
+      std::begin(ms_shape),
+      std::end(ms_shape),
+      std::back_inserter(reordered_ips),
+      [&iter_params](auto& ax) {
+        return find_iter_params(iter_params, ax.id());
+      });
+  else
+    std::transform(
+      std::begin(*iter_params),
+      std::end(*iter_params),
+      std::back_inserter(reordered_ips),
+      [](auto& ip) {
+        return &ip;
+      });
+
+  // compute buffer shape
   std::size_t buffer_capacity = 0;
   std::size_t tail_buffer_capacity = 0;
   std::vector<ColumnAxisBase<MSColumns> > buffer;
-  std::for_each(
-    std::begin(*iter_params),
-    std::end(*iter_params),
-    [&](const IterParams& ip) {
-      if (ip.fully_in_array) {
-        total_buffer_size *= ip.true_length();
-        buffer.emplace_back(static_cast<unsigned>(ip.axis), ip.true_length());
-      } else if (ip.buffer_capacity > 0) {
-        buffer_capacity = ip.buffer_capacity;
-        tail_buffer_capacity = ip.true_length() % ip.buffer_capacity;
-        std::size_t capacity =
-          tail_array ? tail_buffer_capacity : buffer_capacity;
-        total_buffer_size *= capacity;
-        buffer.emplace_back(static_cast<unsigned>(ip.axis), capacity);
-      }
-    });
+    std::for_each(
+      std::begin(reordered_ips),
+      std::end(reordered_ips),
+      [&](auto& ip) {
+        if (ip->fully_in_array) {
+          buffer.emplace_back(
+            static_cast<unsigned>(ip->axis),
+            ip->true_length());
+        } else if (ip->buffer_capacity > 0) {
+          buffer_capacity = ip->buffer_capacity;
+          tail_buffer_capacity = ip->true_length() % ip->buffer_capacity;
+          std::size_t capacity =
+            tail_array ? tail_buffer_capacity : buffer_capacity;
+          buffer.emplace_back(static_cast<unsigned>(ip->axis), capacity);
+        }
+      });
 
   if (tail_array) {
     if (tail_buffer_capacity == 0)
@@ -598,41 +617,37 @@ Reader::init_array_datatype(
 
   auto result_dt = datatype(MPI_CXX_FLOAT_COMPLEX);
   unsigned result_dt_count = 1;
-  if (ms_buffer_order) {
-    result_dt_count = total_buffer_size;
-  } else {
-    for (auto ax = ms_shape.crbegin(); ax != ms_shape.crend(); ++ax) {
-      auto ip = find_iter_params(iter_params, ax->id());
-      if (ip->fully_in_array || ip->buffer_capacity > 0) {
-        auto count = ip->fully_in_array ? ip->true_length() : buffer_capacity;
-        if (count > 1) {
-          auto i0 = buffer_indexer->offset_of_(index);
-          ++index[ip->axis];
-          auto i1 = buffer_indexer->offset_of_(index);
-          --index[ip->axis];
-          if (debug_log) {
-            std::clog << "(" << rank << ") "
-                      << mscol_nickname(ip->axis)
-                      << " dv stride " << i1 - i0
-                      << std::endl;
-          }
-          auto stride = (i1 - i0) * sizeof(std::complex<float>);
-          ::MPI_Aint lb, extent;
-          mpi_call(::MPI_Type_get_extent, *result_dt, &lb, &extent);
-          if (stride == static_cast<std::size_t>(extent)) {
-            result_dt_count *= count;
-          } else {
-            auto dt = std::move(result_dt);
-            result_dt = datatype();
-            mpi_call(
-              ::MPI_Type_create_hvector,
-              count,
-              result_dt_count,
-              stride,
-              *dt,
-              result_dt.get());
-            result_dt_count = 1;
-          }
+  for (auto ax = ms_shape.crbegin(); ax != ms_shape.crend(); ++ax) {
+    auto ip = find_iter_params(iter_params, ax->id());
+    if (ip->fully_in_array || ip->buffer_capacity > 0) {
+      auto count = ip->fully_in_array ? ip->true_length() : buffer_capacity;
+      if (count > 1) {
+        auto i0 = buffer_indexer->offset_of_(index);
+        ++index[ip->axis];
+        auto i1 = buffer_indexer->offset_of_(index);
+        --index[ip->axis];
+        if (debug_log) {
+          std::clog << "(" << rank << ") "
+                    << mscol_nickname(ip->axis)
+                    << " dv stride " << i1 - i0
+                    << std::endl;
+        }
+        auto stride = (i1 - i0) * sizeof(std::complex<float>);
+        ::MPI_Aint lb, extent;
+        mpi_call(::MPI_Type_get_extent, *result_dt, &lb, &extent);
+        if (stride == static_cast<std::size_t>(extent)) {
+          result_dt_count *= count;
+        } else {
+          auto dt = std::move(result_dt);
+          result_dt = datatype();
+          mpi_call(
+            ::MPI_Type_create_hvector,
+            count,
+            result_dt_count,
+            stride,
+            *dt,
+            result_dt.get());
+          result_dt_count = 1;
         }
       }
     }
