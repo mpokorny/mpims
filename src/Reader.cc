@@ -602,21 +602,14 @@ Reader::init_array_datatype(
     result_dt_count = total_buffer_size;
   } else {
     for (auto ax = ms_shape.crbegin(); ax != ms_shape.crend(); ++ax) {
-      auto ax_id = ax->id();
-      auto ip =
-        std::find_if(
-          std::begin(*iter_params),
-          std::end(*iter_params),
-          [&ax_id](const IterParams& ip) {
-            return ip.axis == ax_id;
-          });
+      auto ip = find_iter_params(iter_params, ax->id());
       if (ip->fully_in_array || ip->buffer_capacity > 0) {
         auto count = ip->fully_in_array ? ip->true_length() : buffer_capacity;
         if (count > 1) {
           auto i0 = buffer_indexer->offset_of_(index);
-          ++index[ax_id];
+          ++index[ip->axis];
           auto i1 = buffer_indexer->offset_of_(index);
-          --index[ax_id];
+          --index[ip->axis];
           if (debug_log) {
             std::clog << "(" << rank << ") "
                       << mscol_nickname(ip->axis)
@@ -681,15 +674,7 @@ Reader::init_fileview(
 
   auto ms_axis = ms_shape.crbegin();
   while (ms_axis != ms_shape.crend()) {
-    auto ms_axis_id = ms_axis->id();
-    auto ip =
-      std::find_if(
-        std::begin(*iter_params),
-        std::end(*iter_params),
-        [&ms_axis_id](const IterParams& ip) {
-          return ip.axis == ms_axis_id;
-        });
-
+    auto ip = find_iter_params(iter_params, ms_axis->id());
     if (ip->within_fileview || ip->buffer_capacity > 1) {
       std::size_t count, num_blocks, block_len, terminal_block_len;
       if (ip->within_fileview) {

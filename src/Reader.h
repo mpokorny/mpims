@@ -516,6 +516,23 @@ protected:
   bool
   buffer_order_compare(const MSColumns& col0, const MSColumns& col1);
 
+  static const IterParams*
+  find_iter_params(
+    const std::shared_ptr<std::vector<IterParams> >& iter_params,
+    MSColumns col) {
+
+    auto ip =
+      std::find_if(
+        std::begin(*iter_params),
+        std::end(*iter_params),
+        [&col](auto& ip) {
+          return ip.axis == col;
+        });
+    if (ip != std::end(*iter_params))
+      return &*ip;
+    return nullptr;
+  }
+
 private:
 
   ReaderMPIState m_mpi_state;
