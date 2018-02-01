@@ -157,6 +157,7 @@ parse_options(
   std::size_t& buffer_size,
   std::string& ms_path,
   bool& ms_buffer_order,
+  bool& readahead,
   bool& debug_log) {
 
   int opt;
@@ -167,6 +168,7 @@ parse_options(
     {"buffer", required_argument, &opt, 'b'},
     {"transpose", no_argument, nullptr, 't'},
     {"no-transpose", no_argument, nullptr, -'t'},
+    {"readahead", no_argument, nullptr, 'r'},
     {"verbose", no_argument, nullptr, 'v'},
     {"help", optional_argument, nullptr, 'h'}
   };
@@ -178,17 +180,19 @@ parse_options(
         << "  (--buffer | -b) <buffer-size>" << std::endl
         << "  [(--grid |-g) <distribution>]" << std::endl
         << "  [((--transpose | -t) | --no-transpose)]" << std::endl
+        << "  [(--readahead | -r)]" << std::endl
         << "  [(--verbose | -v)]" << std::endl
         << "  <ms-data-column-file>" << std::endl;
 
   ms_buffer_order = true;
   debug_log = false;
+  readahead = false;
   bool got_shape = false, got_order = false, got_buffer = false;
   ms_path = "";
 
   while (1) {
     opt = 0;
-    int c = getopt_long(argc, argv, "s:o:g::b:tvh", long_options, nullptr);
+    int c = getopt_long(argc, argv, "s:o:g::b:trvh", long_options, nullptr);
 
     if (c == -1) {
       ms_path = argv[optind];
@@ -255,6 +259,10 @@ parse_options(
       ms_buffer_order = true;
       break;
 
+    case 'r':
+      readahead = true;
+      break;
+
     case 'v':
       debug_log = true;
       break;
@@ -282,6 +290,7 @@ read_all(
   std::size_t buffer_size,
   std::string ms_path,
   bool ms_buffer_order,
+  bool readahead,
   bool debug_log) {
 
   unsigned result = 0;
@@ -297,6 +306,7 @@ read_all(
         ms_buffer_order,
         pgrid,
         buffer_size,
+        readahead,
         debug_log);
     result = reader.num_ranks();
     while (reader != Reader::end()) {
@@ -373,6 +383,7 @@ main(int argc, char *argv[]) {
   std::size_t max_buffer_size;
   std::string ms_path;
   bool ms_buffer_order;
+  bool readahead;
   bool debug_log;
 
   bool options_ok =
@@ -387,6 +398,7 @@ main(int argc, char *argv[]) {
       max_buffer_size,
       ms_path,
       ms_buffer_order,
+      readahead,
       debug_log);
 
   if (options_ok) {
@@ -407,6 +419,7 @@ main(int argc, char *argv[]) {
               max_buffer_size,
               ms_path,
               ms_buffer_order,
+              readahead,
               debug_log);
           mpi_call(::MPI_Barrier, MPI_COMM_WORLD);
           return n;

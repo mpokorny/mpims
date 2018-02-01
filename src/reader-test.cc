@@ -296,8 +296,9 @@ main(int argc, char* argv[]) {
             traversal_order,
             mso,
             pgrid,
-            buffer_size
-            /* , true */);
+            buffer_size,
+            false
+            /*, true */);
         while (reader != Reader::end()) {
           const MSArray& array = *reader;
           if (array.buffer) {

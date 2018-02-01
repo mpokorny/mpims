@@ -8,9 +8,11 @@
 #include <iostream>
 #include <iterator>
 #include <mutex>
+#include <optional>
 #include <stack>
 #include <string>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
 #include <mpims.h>
@@ -73,7 +75,8 @@ public:
 
     std::shared_ptr<const std::vector<IterParams> > iter_params;
 
-    std::vector<IndexBlockSequenceMap<MSColumns> > block_maps;
+    std::shared_ptr<
+      const std::vector<IndexBlockSequenceMap<MSColumns> > > block_maps;
 
     ArrayIndexer<MSColumns>::index data_index;
 
@@ -106,7 +109,7 @@ public:
         eof == other.eof
         && cont == other.cont
         && count == other.count
-        && block_maps == other.block_maps
+        && (block_maps == other.block_maps || *block_maps == *other.block_maps)
         && data_index == other.data_index
         && axis_iters == other.axis_iters
         && in_tail == other.in_tail
@@ -137,7 +140,7 @@ public:
               ip.axis,
               std::vector{ IndexBlock(data_index.at(ip.axis), 1) });
           } else {
-            auto& map = block_maps[i];
+            auto& map = (*block_maps)[i];
             auto ibs = map[data_index.at(ip.axis)];
             ibs.trim();
             result.push_back(ibs);
@@ -174,21 +177,9 @@ public:
     std::shared_ptr<const std::optional<MSColumns> > inner_fileview_axis,
     std::shared_ptr<const ArrayIndexer<MSColumns> > ms_indexer,
     std::size_t buffer_size,
+    bool readahead,
     TraversalState&& traversal_state,
-    bool debug_log)
-    : m_mpi_state(std::move(mpi_state))
-    , m_ms_shape(ms_shape)
-    , m_iter_params(iter_params)
-    , m_buffer_order(buffer_order)
-    , m_inner_fileview_axis(inner_fileview_axis)
-    , m_etype_datatype(datatype(MPI_CXX_FLOAT_COMPLEX))
-    , m_ms_indexer(ms_indexer)
-    , m_buffer_size(buffer_size)
-    , m_debug_log(debug_log)
-    , m_traversal_state(std::move(traversal_state)) {
-    auto comm = m_mpi_state.handles()->comm;
-    mpi_call(::MPI_Comm_rank, comm, reinterpret_cast<int*>(&m_rank));
-  }
+    bool debug_log) ;
 
   Reader(const Reader& other)
     : m_mpi_state(other.m_mpi_state)
@@ -200,8 +191,12 @@ public:
     , m_ms_indexer(other.m_ms_indexer)
     , m_rank(other.m_rank)
     , m_buffer_size(other.m_buffer_size)
+    , m_readahead(other.m_readahead)
     , m_debug_log(other.m_debug_log)
-    , m_traversal_state(other.m_traversal_state) {
+    , m_traversal_state(other.m_traversal_state)
+    , m_next_traversal_state(other.m_next_traversal_state)
+    , m_ms_array(other.m_ms_array)
+    , m_next_ms_array(other.m_next_ms_array) {
   }
 
   Reader(Reader&& other)
@@ -214,8 +209,12 @@ public:
     , m_ms_indexer(std::move(other).m_ms_indexer)
     , m_rank(std::move(other).m_rank)
     , m_buffer_size(std::move(other).m_buffer_size)
+    , m_readahead(std::move(other).m_readahead)
     , m_debug_log(std::move(other).m_debug_log)
-    , m_traversal_state(std::move(other).m_traversal_state) {
+    , m_traversal_state(std::move(other).m_traversal_state)
+    , m_next_traversal_state(std::move(other).m_next_traversal_state)
+    , m_ms_array(std::move(other).m_ms_array)
+    , m_next_ms_array(std::move(other).m_next_ms_array) {
   }
 
   Reader&
@@ -235,6 +234,7 @@ public:
     m_ms_shape = std::move(other).m_ms_shape;
     m_rank = std::move(other).m_rank;
     m_buffer_size = std::move(other).m_buffer_size;
+    m_readahead = std::move(other).m_readahead;
     m_iter_params = std::move(other).m_iter_params;
     m_buffer_order = std::move(other).m_buffer_order;
     m_inner_fileview_axis = std::move(other).m_inner_fileview_axis;
@@ -242,8 +242,13 @@ public:
     m_ms_indexer = std::move(other).m_ms_indexer;
     m_debug_log = std::move(other).m_debug_log;
     m_traversal_state = std::move(other).m_traversal_state;
+    m_next_traversal_state = std::move(other).m_next_traversal_state;
+    m_ms_array = std::move(other).m_ms_array;
+    m_next_ms_array = std::move(other).m_next_ms_array;
     return *this;
   }
+
+  ~Reader();
 
   struct IterParams {
     MSColumns axis;
@@ -362,6 +367,7 @@ public:
     bool ms_buffer_order,
     std::unordered_map<MSColumns, DataDistribution>& pgrid,
     std::size_t max_buffer_size,
+    bool readahead,
     bool debug_log = false);
 
   static Reader
@@ -417,7 +423,9 @@ public:
   // value or use MSArray::num_elements().
   const MSArray&
   get() const {
-    return m_ms_array;
+    std::lock_guard<decltype(m_mtx)> lock(m_mtx);
+    wait_for_array(m_ms_array);
+    return std::get<0>(m_ms_array);
   };
 
   void
@@ -450,6 +458,9 @@ protected:
 
   void
   step(bool cont);
+
+  void
+  start_next();
 
   static void
   init_iterparams(
@@ -487,29 +498,36 @@ protected:
       int rank,
       bool debug_log);
 
-  static std::vector<IndexBlockSequenceMap<MSColumns> >
+  static std::unique_ptr<std::vector<IndexBlockSequenceMap<MSColumns> > >
   make_index_block_sequences(
     const std::shared_ptr<const std::vector<IterParams> >& iter_params);
 
   std::shared_ptr<const ::MPI_Datatype>
   init_buffer_datatype() const;
 
-  std::unique_ptr<std::complex<float> >
+  std::tuple<
+    std::unique_ptr<std::complex<float> >,
+    std::variant<::MPI_Request, ::MPI_Status> >
   read_arrays(
+    TraversalState& traversal_state,
+    bool nonblocking,
     const std::vector<IndexBlockSequence<MSColumns> >& blocks,
     ::MPI_File file) const;
 
   void
-  set_fileview(::MPI_File file) const;
+  set_fileview(TraversalState& traversal_state, ::MPI_File file) const;
 
   void
-  advance_to_next_buffer(::MPI_File file);
+  advance_to_next_buffer(TraversalState& traversal_state, ::MPI_File file);
 
   void
-  advance_to_buffer_end();
+  advance_to_buffer_end(TraversalState& traversal_state);
 
-  void
-  read_next_buffer(::MPI_File file);
+  std::tuple<MSArray, std::variant<::MPI_Request, ::MPI_Status> >
+  read_next_buffer(
+    TraversalState& TraversalState,
+    bool nonblocking,
+    ::MPI_File file);
 
   mutable std::shared_ptr<const ::MPI_Datatype> m_buffer_datatype;
 
@@ -533,6 +551,32 @@ protected:
     return nullptr;
   }
 
+  void
+  wait_for_array(
+    std::tuple<MSArray, std::variant<::MPI_Request, ::MPI_Status> >& array,
+    bool cancel=false)
+    const {
+    if (std::get<0>(array).buffer
+        && std::holds_alternative<::MPI_Request>(std::get<1>(array))) {
+      if (cancel)
+        mpi_call(
+          ::MPI_Cancel,
+          &std::get<::MPI_Request>(std::get<1>(m_ms_array)));
+
+      std::tuple<
+        MSArray,
+        std::variant<::MPI_Request, ::MPI_Status> > completion(
+          std::get<0>(array),
+          std::variant<::MPI_Request, ::MPI_Status>(
+            std::in_place_index<1>));
+      mpi_call(
+        ::MPI_Wait,
+        &std::get<::MPI_Request>(std::get<1>(array)),
+        &std::get<::MPI_Status>(std::get<1>(completion)));
+      array = std::move(completion);
+    }
+  }
+
 private:
 
   ReaderMPIState m_mpi_state;
@@ -554,13 +598,21 @@ private:
 
   std::size_t m_buffer_size;
 
+  bool m_readahead;
+
   bool m_debug_log;
 
   TraversalState m_traversal_state;
 
-  MSArray m_ms_array;
+  TraversalState m_next_traversal_state;
 
-  std::mutex m_mtx;
+  mutable std::tuple<MSArray, std::variant<::MPI_Request, ::MPI_Status> >
+  m_ms_array;
+
+  std::tuple<MSArray, std::variant<::MPI_Request, ::MPI_Status> >
+  m_next_ms_array;
+
+  mutable std::mutex m_mtx;
 };
 
 } // end namespace mpims
