@@ -379,14 +379,22 @@ Reader::start_next() {
     handles->comm);
   m_next_traversal_state.cont = tests[0];
   m_next_traversal_state.eof = tests[1];
-  if (m_next_traversal_state.cont && !m_next_traversal_state.eof)
+  if (m_next_traversal_state.cont && !m_next_traversal_state.eof) {
+    // wait for previous I/O request to complete...I don't know that this
+    // requirement isn't a bug in a romio/mpich/mvapich non-blocking function
+    // implementation...without waiting, "reader-test" using a single process
+    // with readahead fails in such a way that it appears that the same buffers
+    // are returned for some consecutive reads, but there is no failure when the
+    // number of ranks is "high enough"
+    wait_for_array(m_ms_array);
     m_next_ms_array =
       read_next_buffer(m_next_traversal_state, m_readahead, handles->file);
-  else
+  } else {
     m_next_ms_array =
       std::make_tuple(
         MSArray(),
         std::variant<::MPI_Request,::MPI_Status>(std::in_place_index<1>));
+  }
 }
 
 bool
