@@ -1188,10 +1188,10 @@ bool
 Reader::buffer_order_compare(const MSColumns& col0, const MSColumns& col1) {
   auto p0 =
     std::find(std::begin(*m_buffer_order), std::end(*m_buffer_order), col0);
-  if (p0 == std::end(*m_buffer_order))
-    return true;
   auto p1 =
     std::find(std::begin(*m_buffer_order), std::end(*m_buffer_order), col1);
+  if (p0 == std::end(*m_buffer_order))
+    return p1 != std::end(*m_buffer_order);
   if (p1 == std::end(*m_buffer_order))
     return false;
   return p0 < p1;
