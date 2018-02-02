@@ -257,16 +257,8 @@ Reader::begin(
       std::begin(ms_shape),
       std::end(ms_shape),
       [&iter_params, &buffer_order](auto& ax) {
-        auto axid = ax.id();
-        auto ip =
-          std::find_if(
-            std::begin(*iter_params),
-            std::end(*iter_params),
-            [&axid](auto& ip) {
-              return ip.axis == axid;
-            });
-        if (ip != std::end(*iter_params)
-            && (ip->buffer_capacity > 0 || ip->fully_in_array))
+        auto ip = find_iter_params(iter_params, ax.id());
+        if (ip != nullptr && (ip->buffer_capacity > 0 || ip->fully_in_array))
           buffer_order->emplace_back(ip->axis);
       });
   else
