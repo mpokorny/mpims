@@ -166,8 +166,7 @@ public:
 
   };
 
-  Reader() {
-  }
+  Reader();
 
   Reader(
     ReaderMPIState&& mpi_state,
@@ -179,7 +178,7 @@ public:
     std::size_t buffer_size,
     bool readahead,
     TraversalState&& traversal_state,
-    bool debug_log) ;
+    bool debug_log);
 
   Reader(const Reader& other)
     : m_mpi_state(other.m_mpi_state)
@@ -556,8 +555,7 @@ protected:
     std::tuple<MSArray, std::variant<::MPI_Request, ::MPI_Status> >& array,
     bool cancel=false)
     const {
-    if (std::get<0>(array).buffer
-        && std::holds_alternative<::MPI_Request>(std::get<1>(array))) {
+    if (std::holds_alternative<::MPI_Request>(std::get<1>(array))) {
       if (cancel)
         mpi_call(
           ::MPI_Cancel,

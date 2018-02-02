@@ -13,6 +13,16 @@
 
 using namespace mpims;
 
+Reader::Reader() {
+  m_ms_array = std::make_tuple(
+    MSArray(),
+    std::variant<::MPI_Request, ::MPI_Status>(std::in_place_index<1>));
+
+  m_next_ms_array = std::make_tuple(
+    MSArray(),
+    std::variant<::MPI_Request, ::MPI_Status>(std::in_place_index<1>));
+}
+
 Reader::Reader(
     ReaderMPIState&& mpi_state,
     std::shared_ptr<const std::vector<ColumnAxisBase<MSColumns> > > ms_shape,
@@ -56,7 +66,7 @@ Reader::Reader(
       init_params->max_blocks > 0);
     m_ms_array =
       read_next_buffer(m_traversal_state, m_readahead, handles->file);
-    if (m_readahead && !at_end())
+    if (m_readahead)
       start_next();
   } else {
     m_traversal_state.eof = true;
@@ -342,7 +352,6 @@ Reader::step(bool cont) {
 
   if (m_readahead) {
     wait_for_array(m_ms_array, !cont);
-    // update m_traversal_state for at_end test, below
     m_traversal_state = std::move(m_next_traversal_state);
     std::swap(m_ms_array, m_next_ms_array);
     if (at_end())
@@ -376,16 +385,16 @@ Reader::start_next() {
     MPI_CXX_BOOL,
     MPI_LAND,
     handles->comm);
-  if (m_next_traversal_state.cont && !m_next_traversal_state.eof) {
-    wait_for_array(m_ms_array);
+  m_next_traversal_state.cont = tests[0];
+  m_next_traversal_state.eof = tests[1];
+  if (m_next_traversal_state.cont && !m_next_traversal_state.eof)
     m_next_ms_array =
       read_next_buffer(m_next_traversal_state, m_readahead, handles->file);
-  } else {
+  else
     m_next_ms_array =
       std::make_tuple(
         MSArray(),
         std::variant<::MPI_Request,::MPI_Status>(std::in_place_index<1>));
-  }
 }
 
 bool
