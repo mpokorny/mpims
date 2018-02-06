@@ -67,11 +67,11 @@ private:
   mutable std::recursive_mutex m_mtx;
 };
 
-class ReaderMPIState {
+class MPIState {
 
 public:
 
-  ReaderMPIState()
+  MPIState()
     : m_current(
       std::make_shared<MPIHandles>(
         MPI_COMM_NULL,
@@ -80,7 +80,7 @@ public:
     , m_path(new std::string()) {
   }
 
-  ReaderMPIState(
+  MPIState(
     ::MPI_Comm comm,
     ::MPI_Info info,
     ::MPI_File file,
@@ -89,22 +89,22 @@ public:
     , m_path(std::make_shared<std::string>(path)) {
   }
 
-  ReaderMPIState(const ReaderMPIState& other) {
-    std::lock_guard<const ReaderMPIState> lock(other);
+  MPIState(const MPIState& other) {
+    std::lock_guard<const MPIState> lock(other);
     derive_from(other);
   }
 
-  ReaderMPIState&
-  operator=(const ReaderMPIState& other) {
-    std::lock_guard<ReaderMPIState> lock(*this);
+  MPIState&
+  operator=(const MPIState& other) {
+    std::lock_guard<MPIState> lock(*this);
     if (this != &other) {
-      ReaderMPIState temp(other);
+      MPIState temp(other);
       swap(temp);
     }
     return *this;
   }
 
-  ReaderMPIState(ReaderMPIState&& other)
+  MPIState(MPIState&& other)
     : m_latent(std::move(other).m_latent)
     , m_current(std::move(other).m_current)
     , m_disp(std::move(other).m_disp)
@@ -114,9 +114,9 @@ public:
     , m_path(std::move(other).m_path) {
   }
 
-  ReaderMPIState&
-  operator=(ReaderMPIState&& other) {
-    std::lock_guard<ReaderMPIState> lock(*this);
+  MPIState&
+  operator=(MPIState&& other) {
+    std::lock_guard<MPIState> lock(*this);
     m_latent = std::move(other).m_latent;
     m_current = std::move(other).m_current;
     m_disp = std::move(other).m_disp;
@@ -149,10 +149,10 @@ public:
   }
 
   void
-  swap(ReaderMPIState& other) {
+  swap(MPIState& other) {
     using std::swap;
-    std::lock_guard<ReaderMPIState> lock1(*this);
-    std::lock_guard<ReaderMPIState> lock2(other);
+    std::lock_guard<MPIState> lock1(*this);
+    std::lock_guard<MPIState> lock2(other);
     swap(m_current, other.m_current);
     swap(m_latent, other.m_latent);
     swap(m_disp, other.m_disp);
@@ -165,7 +165,7 @@ public:
 protected:
 
   void
-  derive_from(const ReaderMPIState& other) const {
+  derive_from(const MPIState& other) const {
     m_path = other.m_path;
     if (other.m_current) {
       std::lock_guard<MPIHandles> lock(*other.m_current);

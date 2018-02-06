@@ -24,7 +24,7 @@ Reader::Reader() {
 }
 
 Reader::Reader(
-    ReaderMPIState&& mpi_state,
+    MPIState&& mpi_state,
     std::shared_ptr<const std::vector<ColumnAxisBase<MSColumns> > > ms_shape,
     std::shared_ptr<const std::vector<IterParams> > iter_params,
     std::shared_ptr<const std::vector<MSColumns> > buffer_order,
@@ -323,7 +323,7 @@ Reader::begin(
 
   return
     Reader(
-      ReaderMPIState(reduced_comm, priv_info, file, path),
+      MPIState(reduced_comm, priv_info, file, path),
       std::make_shared<std::vector<ColumnAxisBase<MSColumns> > >(ms_shape),
       iter_params,
       buffer_order,

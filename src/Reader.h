@@ -23,7 +23,7 @@
 #include <MSArray.h>
 #include <MSColumns.h>
 #include <DataDistribution.h>
-#include <ReaderMPIState.h>
+#include <MPIState.h>
 
 namespace mpims {
 
@@ -169,7 +169,7 @@ public:
   Reader();
 
   Reader(
-    ReaderMPIState&& mpi_state,
+    MPIState&& mpi_state,
     std::shared_ptr<const std::vector<ColumnAxisBase<MSColumns> > > ms_shape,
     std::shared_ptr<const std::vector<IterParams> > iter_params,
     std::shared_ptr<const std::vector<MSColumns> > buffer_order,
@@ -585,7 +585,7 @@ protected:
 
 private:
 
-  ReaderMPIState m_mpi_state;
+  MPIState m_mpi_state;
 
   std::shared_ptr<const std::vector<ColumnAxisBase<MSColumns> > > m_ms_shape;
 
