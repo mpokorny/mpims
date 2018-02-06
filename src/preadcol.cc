@@ -310,7 +310,7 @@ read_all(
         debug_log);
     result = reader.num_ranks();
     while (reader != Reader::end()) {
-      const MSArray& array __attribute__((unused)) = *reader;
+      auto array __attribute__((unused)) = *reader;
       ++reader;
     }
   } catch (std::exception& e) {

@@ -420,11 +420,18 @@ public:
 
   // NB: the returned array can be empty! Caller can test MSArray::buffer
   // value or use MSArray::num_elements().
-  const MSArray&
+  const std::shared_ptr<const std::complex<float> >
   get() const {
     std::lock_guard<decltype(m_mtx)> lock(m_mtx);
     wait_for_array(m_ms_array);
-    return std::get<0>(m_ms_array);
+    return std::get<0>(m_ms_array).buffer;
+  };
+
+  const std::vector<IndexBlockSequence<MSColumns> >&
+  indices() const {
+    std::lock_guard<decltype(m_mtx)> lock(m_mtx);
+    wait_for_array(m_ms_array);
+    return std::get<0>(m_ms_array).blocks;
   };
 
   void
@@ -443,14 +450,9 @@ public:
     return result;
   }
 
-  const MSArray&
+  const std::shared_ptr<const std::complex<float> >
   operator*() const {
     return get();
-  }
-
-  const MSArray *
-  operator->() const {
-    return &get();
   }
 
 protected:

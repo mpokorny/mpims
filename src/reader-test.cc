@@ -75,7 +75,7 @@ checkit(
 
 bool
 checkit(
-  const shared_ptr<complex<float> >& buffer,
+  const shared_ptr<const complex<float> >& buffer,
   size_t& n,
   vector<pair<MSColumns, size_t> >& coords,
   vector<IndexBlockSequence<MSColumns> >::const_iterator begin,
@@ -136,7 +136,7 @@ checkit(
 bool
 cb(
   const vector<IndexBlockSequence<MSColumns> >& indexes,
-  const shared_ptr<complex<float> >& buffer,
+  const shared_ptr<const complex<float> >& buffer,
   ostringstream& output) {
 
   output << "next buffer..." << endl;
@@ -300,9 +300,9 @@ main(int argc, char* argv[]) {
             false
             /*, true */);
         while (reader != Reader::end()) {
-          const MSArray& array = *reader;
-          if (array.buffer) {
-            if (cb(array.blocks, array.buffer, output))
+          auto array = *reader;
+          if (array) {
+            if (cb(reader.indices(), array, output))
               ++reader;
             else
               reader.interrupt();
