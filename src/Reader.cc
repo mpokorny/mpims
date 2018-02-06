@@ -1104,7 +1104,7 @@ Reader::read_arrays(
 void
 Reader::advance_to_next_buffer(
   TraversalState& traversal_state,
-  ::MPI_File file) {
+  ::MPI_File file) const {
   // assume that m_mtx and m_mpi_state.handles() are locked
   traversal_state.count = 0;
   traversal_state.max_count = 0;
@@ -1149,7 +1149,7 @@ Reader::advance_to_next_buffer(
 }
 
 void
-Reader::advance_to_buffer_end(TraversalState& traversal_state) {
+Reader::advance_to_buffer_end(TraversalState& traversal_state) const {
   // assume that m_mtx is locked
   AxisIter* axis_iter = &traversal_state.axis_iters.top();
   axis_iter->increment(traversal_state.max_count);
@@ -1174,8 +1174,9 @@ std::tuple<MSArray, std::variant<::MPI_Request, ::MPI_Status> >
 Reader::read_next_buffer(
   TraversalState& traversal_state,
   bool nonblocking,
-  ::MPI_File file) {
+  ::MPI_File file) const {
 
+  // assume that m_mtx is locked
   advance_to_next_buffer(traversal_state, file);
   auto blocks = traversal_state.blocks();
   std::stable_sort(
@@ -1193,7 +1194,9 @@ Reader::read_next_buffer(
 }
 
 bool
-Reader::buffer_order_compare(const MSColumns& col0, const MSColumns& col1) {
+Reader::buffer_order_compare(const MSColumns& col0, const MSColumns& col1)
+  const {
+
   auto p0 =
     std::find(std::begin(*m_buffer_order), std::end(*m_buffer_order), col0);
   auto p1 =

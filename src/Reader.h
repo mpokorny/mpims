@@ -509,9 +509,6 @@ protected:
   make_index_block_sequences(
     const std::shared_ptr<const std::vector<IterParams> >& iter_params);
 
-  std::shared_ptr<const ::MPI_Datatype>
-  init_buffer_datatype() const;
-
   std::tuple<
     std::unique_ptr<std::complex<float> >,
     std::variant<::MPI_Request, ::MPI_Status> >
@@ -525,21 +522,23 @@ protected:
   set_fileview(TraversalState& traversal_state, ::MPI_File file) const;
 
   void
-  advance_to_next_buffer(TraversalState& traversal_state, ::MPI_File file);
+  advance_to_next_buffer(
+    TraversalState& traversal_state,
+    ::MPI_File file) const;
 
   void
-  advance_to_buffer_end(TraversalState& traversal_state);
+  advance_to_buffer_end(TraversalState& traversal_state) const;
 
   std::tuple<MSArray, std::variant<::MPI_Request, ::MPI_Status> >
   read_next_buffer(
     TraversalState& TraversalState,
     bool nonblocking,
-    ::MPI_File file);
+    ::MPI_File file) const;
 
   mutable std::shared_ptr<const ::MPI_Datatype> m_buffer_datatype;
 
   bool
-  buffer_order_compare(const MSColumns& col0, const MSColumns& col1);
+  buffer_order_compare(const MSColumns& col0, const MSColumns& col1) const;
 
   static const IterParams*
   find_iter_params(
@@ -563,6 +562,7 @@ protected:
     std::tuple<MSArray, std::variant<::MPI_Request, ::MPI_Status> >& array,
     bool cancel=false)
     const {
+
     if (std::holds_alternative<::MPI_Request>(std::get<1>(array))) {
       if (cancel)
         mpi_call(
@@ -615,7 +615,7 @@ private:
   mutable std::tuple<MSArray, std::variant<::MPI_Request, ::MPI_Status> >
   m_ms_array;
 
-  std::tuple<MSArray, std::variant<::MPI_Request, ::MPI_Status> >
+  mutable std::tuple<MSArray, std::variant<::MPI_Request, ::MPI_Status> >
   m_next_ms_array;
 
   mutable std::mutex m_mtx;
