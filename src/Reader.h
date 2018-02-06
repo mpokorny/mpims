@@ -388,7 +388,7 @@ public:
       && m_traversal_state == other.m_traversal_state
       // and now the potentially really expensive test -- this is required by
       // semantics of an InputIterator
-      && get() == other.get());
+      && getv() == other.getv());
   }
 
   bool
@@ -418,15 +418,6 @@ public:
     step(false);
   }
 
-  // NB: the returned array can be empty! Caller can test MSArray::buffer
-  // value or use MSArray::num_elements().
-  const std::shared_ptr<const std::complex<float> >
-  get() const {
-    std::lock_guard<decltype(m_mtx)> lock(m_mtx);
-    wait_for_array(m_ms_array);
-    return std::get<0>(m_ms_array).buffer;
-  };
-
   const std::vector<IndexBlockSequence<MSColumns> >&
   indices() const {
     std::lock_guard<decltype(m_mtx)> lock(m_mtx);
@@ -450,9 +441,17 @@ public:
     return result;
   }
 
+  // NB: the returned array can be empty! Caller should test for null.
   const std::shared_ptr<const std::complex<float> >
   operator*() const {
-    return get();
+    return getv();
+  }
+
+  std::unique_ptr<std::shared_ptr<const std::complex<float> > >
+  operator->() const {
+    std::unique_ptr<std::shared_ptr<const std::complex<float> > > result;
+    *result = getv();
+    return result;
   }
 
 protected:
@@ -462,6 +461,13 @@ protected:
 
   void
   start_next();
+
+  const std::shared_ptr<const std::complex<float> >
+  getv() const {
+    std::lock_guard<decltype(m_mtx)> lock(m_mtx);
+    wait_for_array(m_ms_array);
+    return std::get<0>(m_ms_array).buffer;
+  };
 
   static void
   init_iterparams(
