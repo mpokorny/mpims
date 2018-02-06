@@ -20,8 +20,6 @@
 
 namespace mpims {
 
-class ReaderMPI;
-
 class MPIHandles {
 public:
 
