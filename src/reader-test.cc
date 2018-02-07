@@ -160,7 +160,7 @@ cb(
 
 void
 writeit(
-  ofstream& f,
+  ostream& f,
   vector<ColumnAxisBase<MSColumns> >::const_iterator axis,
   vector<ColumnAxisBase<MSColumns> >::const_iterator end_axis,
   unordered_map<MSColumns, size_t>& index) {
