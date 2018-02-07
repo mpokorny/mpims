@@ -274,16 +274,14 @@ main(int argc, char* argv[]) {
 
   std::array<bool,2> ms_order{ false, true };
 
-  for (bool& mso : ms_order) {
-    for (size_t t = 0; t < traversal_orders.size(); ++t) {
-      vector<MSColumns>& traversal_order = traversal_orders[t];
-      for (size_t b = 0; b < buffer_sizes.size(); ++b) {
+  for (auto& mso : ms_order) {
+    for (auto& to : traversal_orders) {
+      for (auto& bs : buffer_sizes) {
         ostringstream output;
-        size_t buffer_size = buffer_sizes[b];
         output << "========= traversal_order "
-               << colnames(traversal_order)
+               << colnames(to)
                << "; buffer_size "
-               << num_elements(buffer_size)
+               << num_elements(bs)
                << (mso ? " (ms order)" : "")
                << " ========="
                << endl;
@@ -293,10 +291,10 @@ main(int argc, char* argv[]) {
             MPI_COMM_WORLD,
             MPI_INFO_NULL,
             ms_shape,
-            traversal_order,
+            to,
             mso,
             pgrid,
-            buffer_size,
+            bs,
             false
             /*, true */);
         while (reader != Reader::end()) {
