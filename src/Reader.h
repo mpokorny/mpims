@@ -12,6 +12,7 @@
 #include <stack>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -29,6 +30,8 @@ namespace mpims {
 
 class Reader
   : public std::iterator<std::input_iterator_tag, const MSArray, std::size_t> {
+
+  friend class Writer;
 
 public:
 
@@ -219,8 +222,8 @@ public:
   Reader&
   operator=(const Reader& other) {
     if (this != &other) {
-      std::lock_guard<decltype(m_mtx)> lock(m_mtx);
       Reader temp(other);
+      std::lock_guard<decltype(m_mtx)> lock(m_mtx);
       swap(temp);
     }
     return *this;
@@ -388,7 +391,11 @@ public:
       && m_traversal_state == other.m_traversal_state
       // and now the potentially really expensive test -- this is required by
       // semantics of an InputIterator
-      && getv() == other.getv());
+      && buffer_length() == other.buffer_length()
+      && memcmp(
+        getv().get(),
+        other.getv().get(),
+        sizeof(std::complex<float>) * buffer_length()) == 0);
   }
 
   bool
@@ -425,6 +432,9 @@ public:
     return std::get<0>(m_ms_array).blocks;
   };
 
+  std::size_t
+  buffer_length() const;
+
   void
   swap(Reader& other);
 
@@ -455,6 +465,41 @@ public:
   }
 
 protected:
+
+  static Reader
+  wbegin(
+    const std::string& path,
+    ::MPI_Comm comm,
+    ::MPI_Info info,
+    const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
+    const std::vector<MSColumns>& traversal_order,
+    bool ms_buffer_order,
+    std::unordered_map<MSColumns, DataDistribution>& pgrid,
+    std::size_t max_buffer_size,
+    bool readahead,
+    bool debug_log = false);
+
+  static void
+  initialize(
+    const std::string& path,
+    ::MPI_Comm comm,
+    ::MPI_Info info,
+    const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
+    const std::vector<MSColumns>& traversal_order,
+    bool ms_buffer_order,
+    std::unordered_map<MSColumns, DataDistribution>& pgrid,
+    std::size_t max_buffer_size,
+    bool debug_log,
+    int amode,
+    ::MPI_Comm& reduced_comm,
+    ::MPI_Info& priv_info,
+    ::MPI_File& file,
+    std::shared_ptr<std::vector<IterParams> >& iter_params,
+    std::shared_ptr<std::vector<MSColumns> >& buffer_order,
+    std::shared_ptr<std::optional<MSColumns> >& inner_fileview_axis,
+    std::shared_ptr<ArrayIndexer<MSColumns> >& ms_indexer,
+    std::size_t& buffer_size,
+    TraversalState& traversal_state);
 
   void
   step(bool cont);
@@ -622,5 +667,15 @@ private:
 };
 
 } // end namespace mpims
+
+namespace std {
+
+template <>
+void
+swap(mpims::Reader& r1, mpims::Reader& r2) {
+  r1.swap(r2);
+}
+
+}
 
 #endif // READER_H_
