@@ -92,3 +92,14 @@ target_compile_options(writer-test PRIVATE
 target_link_libraries(writer-test
   ${MPI_CXX_LIBRARIES}
   mpims)
+
+add_executable(pwritecol
+  pwritecol.cc)
+target_include_directories(pwritecol PRIVATE
+  ${MPI_CXX_INCLUDE_PATH}
+  .)
+target_compile_options(pwritecol PRIVATE
+  ${MPI_CXX_COMPILE_FLAGS})
+target_link_libraries(pwritecol
+  ${MPI_CXX_LIBRARIES}
+  mpims)
