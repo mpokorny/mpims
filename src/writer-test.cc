@@ -1,14 +1,13 @@
 /* -*- mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; -*- */
 #include <complex>
 #include <cstdlib>
-#include <fstream>
 #include <iostream>
 #include <memory>
-#include <sstream>
 #include <utility>
 #include <vector>
 
 #include <mpi.h>
+#include <unistd.h>
 
 #include <mpims.h>
 #include <ColumnAxis.h>
@@ -163,7 +162,7 @@ cb(
 void
 writeit(
   complex<float>** buffer,
-  const stack<IndexBlockSequence<MSColumns> >& index_blocks,
+  stack<IndexBlockSequence<MSColumns> >& index_blocks,
   unordered_map<MSColumns, size_t>& indices) {
 
   MSColumns col = index_blocks.top().m_axis;
@@ -183,14 +182,15 @@ writeit(
     }
     *buffer = b;
   } else {
-    stack<IndexBlockSequence<MSColumns> > rem_blocks = index_blocks;
-    rem_blocks.pop();
-    for (auto& ib : index_blocks.top().m_blocks) {
+    IndexBlockSequence<MSColumns> top = index_blocks.top();
+    index_blocks.pop();
+    for (auto& ib : top.m_blocks) {
       for (size_t i = 0; i < ib.m_length; ++i) {
         indices[col] = ib.m_index + i;
-        writeit(buffer, rem_blocks, indices);
+        writeit(buffer, index_blocks, indices);
       }
     }
+    index_blocks.push(top);
   }
 }
 
@@ -200,7 +200,10 @@ write_buffer(
   const vector<IndexBlockSequence<MSColumns> >& ibs) {
 
   stack<IndexBlockSequence<MSColumns> > index_blocks;
-  reverse_copy(begin(ibs), end(ibs), back_inserter(index_blocks));
+  std::for_each(
+    ibs.crbegin(),
+    ibs.crend(),
+    [&index_blocks](auto& ib) { index_blocks.push(ib); });
 
   unordered_map<MSColumns, size_t> indices;
   writeit(&buffer, index_blocks, indices);
@@ -266,12 +269,12 @@ main(int argc, char* argv[]) {
     npol * nch * sizeof(complex<float>)
   };
 
-  unordered_map<MSColumns, DataDistribution> pgrid;
+  // unordered_map<MSColumns, DataDistribution> pgrid;
 
-  // unordered_map<MSColumns, DataDistribution> pgrid = {
-  //   {MSColumns::spectral_window, DataDistribution { 2, 1 } },
-  //   {MSColumns::channel, DataDistribution { 2, 3 } }
-  // };
+  unordered_map<MSColumns, DataDistribution> pgrid = {
+    {MSColumns::spectral_window, DataDistribution { 2, 1 } },
+    {MSColumns::channel, DataDistribution { 2, 3 } }
+  };
 
   unordered_map<MSColumns, DataDistribution> read_pgrid;
 
@@ -280,27 +283,26 @@ main(int argc, char* argv[]) {
   int world_size;
   mpi_call(::MPI_Comm_size, MPI_COMM_WORLD, &world_size);
 
-  //std::array<bool,2> ms_order{ false, true };
-
   for (auto& msao : ms_axis_orders) {
     for (auto& bs : buffer_sizes) {
       ostringstream output;
       output << "========= ms axis order "
              << colnames(msao)
-             << "; buffer_size "
+             << "; write buffer_size "
              << num_elements(bs)
              << " ========="
              << endl;
       string path(argv[1]);
       path += "/wtXXXXXX";
       if (my_rank == 0) {
-        int rc = mkstemp(const_cast<char*>(path.c_str()));
-        if (rc != 0) {
+        int fd = mkstemp(const_cast<char*>(path.c_str()));
+        if (fd == -1) {
           cerr << "Failed to open temporary file: "
                     << strerror(errno)
                     << endl;
           return EXIT_FAILURE;
         }
+        close(fd);
       }
       mpi_call(
         ::MPI_Bcast,
@@ -331,14 +333,13 @@ main(int argc, char* argv[]) {
             msao,
             true,
             pgrid,
-            bs,
-            true);
+            bs);
         while (writer != Writer::end()) {
-          unique_ptr<complex<float> > buffer(
-            reinterpret_cast<complex<float> *>(
-              ::operator new(writer.buffer_length())));
-          write_buffer(buffer.get(), writer.indices());
-          *writer = move(buffer);
+          if (writer.buffer_length() > 0) {
+            unique_ptr<complex<float> > buffer = writer.allocate_buffer();
+            write_buffer(buffer.get(), writer.indices());
+            *writer = move(buffer);
+          }
           ++writer;
         }
       }

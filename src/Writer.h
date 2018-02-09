@@ -117,10 +117,22 @@ public:
     unsigned count;
     ::MPI_Count size;
     std::lock_guard<decltype(m_mtx)> lock(m_mtx);
-    std::tie(dt, count) = m_reader.m_traversal_state.array_datatype();
+    if (m_reader.m_traversal_state.count == 0)
+      return 0;
+    std::tie(dt, count) = m_reader.m_traversal_state.buffer_datatype();
     mpi_call(::MPI_Type_size_x, *dt, &size);
     assert(size % sizeof(std::complex<float>) == 0);
     return (size / sizeof(std::complex<float>)) * count;
+  }
+
+  // this is purely a convenience method, it's not necessary for a client to use
+  // it to allocate a write buffer
+  std::unique_ptr<std::complex<float> >
+  allocate_buffer() const {
+    return
+      std::unique_ptr<std::complex<float> >(
+        reinterpret_cast<std::complex<float> *>(
+          ::operator new(sizeof(std::complex<float>) * buffer_length())));
   }
 
   void
@@ -174,19 +186,12 @@ protected:
 
   std::unique_ptr<const std::complex<float> > m_buffer;
 
-  mutable std::mutex m_mtx;
+  mutable std::recursive_mutex m_mtx;
 };
 
-} // end namespace mpims
-
-namespace std {
-
-template <>
 void
-swap(mpims::Writer& w1, mpims::Writer& w2) {
-  w1.swap(w2);
-}
+swap(Writer& w1, Writer& w2);
 
-}
+} // end namespace mpims
 
 #endif // WRITER_H_
