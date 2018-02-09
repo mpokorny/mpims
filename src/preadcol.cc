@@ -6,6 +6,7 @@
 #include <forward_list>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -57,10 +58,21 @@ parse_buffer_size(const std::string& bufsz) {
   return sz * suffix_multiplier(bufsz.substr(idx, std::string::npos));
 }
 
+class ColspecParseError
+  : public std::runtime_error {
+public:
+
+  explicit ColspecParseError()
+    : std::runtime_error("colspec parsing error") {
+  }
+};
+
 template <unsigned N>
 auto
 parse_colspec(const char *sep, const std::string& colspec) {
   auto fld = colspec.rfind(sep);
+  if (fld == std::string::npos)
+    throw ColspecParseError();
   return std::tuple_cat(
     parse_colspec<N-1>(sep, colspec.substr(0, fld)),
     std::make_tuple(std::stoull(colspec.substr(fld + 1, std::string::npos))));
@@ -139,7 +151,12 @@ parse_distribution(
     [&spec_sep, &result](auto& tok) {
       MSColumns col;
       unsigned long long np, blk;
-      std::tie(col, np, blk) = parse_colspec<2>(spec_sep, tok);
+      try {
+        std::tie(col, np, blk) = parse_colspec<2>(spec_sep, tok);
+      } catch (const ColspecParseError&) {
+        blk = 1;
+        std::tie(col, np) = parse_colspec<1>(spec_sep, tok);
+      }
       result[col] = DataDistribution{ np, blk };
     });
   return result;
