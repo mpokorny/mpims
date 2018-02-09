@@ -13,49 +13,54 @@
 
 using namespace mpims;
 
-Reader::Reader() {
+Reader::Reader()
+  : m_readahead(false) {
   m_ms_array = std::make_tuple(
     MSArray(),
-    std::variant<::MPI_Request, ::MPI_Status>(std::in_place_index<1>));
+    std::variant<::MPI_Request, ::MPI_Status>(std::in_place_index<1>),
+    0);
 
   m_next_ms_array = std::make_tuple(
     MSArray(),
-    std::variant<::MPI_Request, ::MPI_Status>(std::in_place_index<1>));
+    std::variant<::MPI_Request, ::MPI_Status>(std::in_place_index<1>),
+    0);
 }
 
 Reader::Reader(
-    ReaderMPIState&& mpi_state,
-    std::shared_ptr<const std::vector<ColumnAxisBase<MSColumns> > > ms_shape,
-    std::shared_ptr<const std::vector<IterParams> > iter_params,
-    std::shared_ptr<const std::vector<MSColumns> > buffer_order,
-    std::shared_ptr<const std::optional<MSColumns> > inner_fileview_axis,
-    std::shared_ptr<const ArrayIndexer<MSColumns> > ms_indexer,
-    std::size_t buffer_size,
-    bool readahead,
-    TraversalState&& traversal_state,
-    bool debug_log)
-    : m_mpi_state(std::move(mpi_state))
-    , m_ms_shape(ms_shape)
-    , m_iter_params(iter_params)
-    , m_buffer_order(buffer_order)
-    , m_inner_fileview_axis(inner_fileview_axis)
-    , m_etype_datatype(datatype(MPI_CXX_FLOAT_COMPLEX))
-    , m_ms_indexer(ms_indexer)
-    , m_buffer_size(buffer_size)
-    , m_readahead(readahead)
-    , m_debug_log(debug_log)
-    , m_traversal_state(std::move(traversal_state)) {
+  MPIState&& mpi_state,
+  std::shared_ptr<const std::vector<ColumnAxisBase<MSColumns> > > ms_shape,
+  std::shared_ptr<const std::vector<IterParams> > iter_params,
+  std::shared_ptr<const std::vector<MSColumns> > buffer_order,
+  std::shared_ptr<const std::optional<MSColumns> > inner_fileview_axis,
+  std::shared_ptr<const ArrayIndexer<MSColumns> > ms_indexer,
+  std::size_t buffer_size,
+  bool readahead,
+  TraversalState&& traversal_state,
+  bool debug_log)
+  : m_mpi_state(std::move(mpi_state))
+  , m_ms_shape(ms_shape)
+  , m_iter_params(iter_params)
+  , m_buffer_order(buffer_order)
+  , m_inner_fileview_axis(inner_fileview_axis)
+  , m_etype_datatype(datatype(MPI_CXX_FLOAT_COMPLEX))
+  , m_ms_indexer(ms_indexer)
+  , m_buffer_size(buffer_size)
+  , m_readahead(readahead)
+  , m_debug_log(debug_log)
+  , m_traversal_state(std::move(traversal_state)) {
 
   auto handles = m_mpi_state.handles();
   mpi_call(::MPI_Comm_rank, handles->comm, reinterpret_cast<int*>(&m_rank));
 
   m_ms_array = std::make_tuple(
     MSArray(),
-    std::variant<::MPI_Request, ::MPI_Status>(std::in_place_index<1>));
+    std::variant<::MPI_Request, ::MPI_Status>(std::in_place_index<1>),
+    0);
 
   m_next_ms_array = std::make_tuple(
     MSArray(),
-    std::variant<::MPI_Request, ::MPI_Status>(std::in_place_index<1>));
+    std::variant<::MPI_Request, ::MPI_Status>(std::in_place_index<1>),
+    0);
 
   if (handles->file != MPI_FILE_NULL) {
     if (!*m_inner_fileview_axis)
@@ -94,7 +99,144 @@ Reader::begin(
   bool readahead,
   bool debug_log) {
 
-  std::size_t buffer_size =
+  ::MPI_Comm reduced_comm;
+  ::MPI_File file;
+  ::MPI_Info priv_info;
+  std::shared_ptr<std::vector<IterParams> > iter_params;
+  std::shared_ptr<std::vector<MSColumns> > buffer_order;
+  std::shared_ptr<std::optional<MSColumns> > inner_fileview_axis;
+  std::shared_ptr<ArrayIndexer<MSColumns> > ms_indexer;
+  std::size_t buffer_size;
+  TraversalState traversal_state;
+
+  initialize(
+    path,
+    comm,
+    info,
+    ms_shape,
+    traversal_order,
+    ms_buffer_order,
+    pgrid,
+    max_buffer_size,
+    debug_log,
+    MPI_MODE_RDONLY,
+    reduced_comm,
+    priv_info,
+    file,
+    iter_params,
+    buffer_order,
+    inner_fileview_axis,
+    ms_indexer,
+    buffer_size,
+    traversal_state);
+
+  return
+    Reader(
+      MPIState(reduced_comm, priv_info, file, path),
+      std::make_shared<std::vector<ColumnAxisBase<MSColumns> > >(ms_shape),
+      iter_params,
+      buffer_order,
+      inner_fileview_axis,
+      ms_indexer,
+      buffer_size,
+      readahead,
+      std::move(traversal_state),
+      debug_log);
+}
+
+Reader
+Reader::wbegin(
+  const std::string& path,
+  ::MPI_Comm comm,
+  ::MPI_Info info,
+  const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
+  const std::vector<MSColumns>& traversal_order,
+  bool ms_buffer_order,
+  std::unordered_map<MSColumns, DataDistribution>& pgrid,
+  std::size_t max_buffer_size,
+  bool readahead,
+  bool debug_log) {
+
+  ::MPI_Comm reduced_comm;
+  ::MPI_File file;
+  ::MPI_Info priv_info;
+  std::shared_ptr<std::vector<IterParams> > iter_params;
+  std::shared_ptr<std::vector<MSColumns> > buffer_order;
+  std::shared_ptr<std::optional<MSColumns> > inner_fileview_axis;
+  std::shared_ptr<ArrayIndexer<MSColumns> > ms_indexer;
+  std::size_t buffer_size;
+  TraversalState traversal_state;
+
+  initialize(
+    path,
+    comm,
+    info,
+    ms_shape,
+    traversal_order,
+    ms_buffer_order,
+    pgrid,
+    max_buffer_size,
+    debug_log,
+    MPI_MODE_CREATE | MPI_MODE_RDWR,
+    reduced_comm,
+    priv_info,
+    file,
+    iter_params,
+    buffer_order,
+    inner_fileview_axis,
+    ms_indexer,
+    buffer_size,
+    traversal_state);
+
+  std::size_t total_length = 1;
+  std::for_each(
+    std::begin(ms_shape),
+    std::end(ms_shape),
+    [&total_length](auto& ax) {
+      total_length *= ax.length();
+    });
+  mpi_call(
+    ::MPI_File_set_size,
+    file,
+    sizeof(std::complex<float>) * total_length);
+
+  return
+    Reader(
+      MPIState(reduced_comm, priv_info, file, path),
+      std::make_shared<std::vector<ColumnAxisBase<MSColumns> > >(ms_shape),
+      iter_params,
+      buffer_order,
+      inner_fileview_axis,
+      ms_indexer,
+      buffer_size,
+      readahead,
+      std::move(traversal_state),
+      debug_log);
+}
+
+void
+Reader::initialize(
+  const std::string& path,
+  ::MPI_Comm comm,
+  ::MPI_Info info,
+  const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
+  const std::vector<MSColumns>& traversal_order,
+  bool ms_buffer_order,
+  std::unordered_map<MSColumns, DataDistribution>& pgrid,
+  std::size_t max_buffer_size,
+  bool debug_log,
+  int amode,
+  ::MPI_Comm& reduced_comm,
+  ::MPI_Info& priv_info,
+  ::MPI_File& file,
+  std::shared_ptr<std::vector<IterParams> >& iter_params,
+  std::shared_ptr<std::vector<MSColumns> >& buffer_order,
+  std::shared_ptr<std::optional<MSColumns> >& inner_fileview_axis,
+  std::shared_ptr<ArrayIndexer<MSColumns> >& ms_indexer,
+  std::size_t& buffer_size,
+  TraversalState& traversal_state) {
+
+  buffer_size =
     (max_buffer_size / sizeof(std::complex<float>))
     * sizeof(std::complex<float>);
 
@@ -134,7 +276,6 @@ Reader::begin(
     throw std::runtime_error("too few processes for grid");
 
   // create a new communicator of the minimum needed size
-  ::MPI_Comm reduced_comm;
   if (static_cast<std::size_t>(comm_size) > pgrid_size) {
     int comm_rank;
     mpi_call(::MPI_Comm_rank, comm, &comm_rank);
@@ -153,13 +294,10 @@ Reader::begin(
     mpi_call(::MPI_Comm_rank, reduced_comm, &rank);
   }
 
-  std::shared_ptr<std::vector<IterParams> > iter_params =
-    std::make_shared<std::vector<IterParams> >(
-      traversal_order.size());
-  std::shared_ptr<std::optional<MSColumns> > inner_fileview_axis =
-    std::make_shared<std::optional<MSColumns> >();
-  std::shared_ptr<ArrayIndexer<MSColumns> > ms_indexer =
-    ArrayIndexer<MSColumns>::of(ArrayOrder::row_major, ms_shape);
+  iter_params =
+    std::make_shared<std::vector<IterParams> >(traversal_order.size());
+  inner_fileview_axis = std::make_shared<std::optional<MSColumns> >();
+  ms_indexer = ArrayIndexer<MSColumns>::of(ArrayOrder::row_major, ms_shape);
   std::stack<AxisIter> traversal_axis_iters;
 
   init_iterparams(
@@ -224,10 +362,10 @@ Reader::begin(
   if (!tail_fileview_datatype)
     tail_fileview_datatype = full_fileview_datatype;
 
-  std::shared_ptr<::MPI_Datatype> full_array_datatype;
-  unsigned full_array_dt_count;
-  std::tie(full_array_datatype, full_array_dt_count) =
-    init_array_datatype(
+  std::shared_ptr<::MPI_Datatype> full_buffer_datatype;
+  unsigned full_buffer_dt_count;
+  std::tie(full_buffer_datatype, full_buffer_dt_count) =
+    init_buffer_datatype(
       ms_shape,
       iter_params,
       ms_buffer_order,
@@ -235,23 +373,23 @@ Reader::begin(
       rank,
       debug_log);
 
-  std::shared_ptr<::MPI_Datatype> tail_array_datatype;
-  unsigned tail_array_dt_count;
-  std::tie(tail_array_datatype, tail_array_dt_count) =
-    init_array_datatype(
+  std::shared_ptr<::MPI_Datatype> tail_buffer_datatype;
+  unsigned tail_buffer_dt_count;
+  std::tie(tail_buffer_datatype, tail_buffer_dt_count) =
+    init_buffer_datatype(
       ms_shape,
       iter_params,
       ms_buffer_order,
       true,
       rank,
       debug_log);
-  if (!tail_array_datatype) {
-    tail_array_datatype = full_array_datatype;
-    tail_array_dt_count = full_array_dt_count;
+  if (!tail_buffer_datatype) {
+    tail_buffer_datatype = full_buffer_datatype;
+    tail_buffer_dt_count = full_buffer_dt_count;
   }
 
-  std::shared_ptr<std::vector<MSColumns> > buffer_order(
-    new std::vector<MSColumns>) ;
+  buffer_order =
+    std::shared_ptr<std::vector<MSColumns> >(new std::vector<MSColumns>);
   if (ms_buffer_order)
     std::for_each(
       std::begin(ms_shape),
@@ -270,8 +408,8 @@ Reader::begin(
           buffer_order->emplace_back(ip.axis);
       });
 
-  ::MPI_File file = MPI_FILE_NULL;
-  ::MPI_Info priv_info = info;
+  file = MPI_FILE_NULL;
+  priv_info = info;
   if (info != MPI_INFO_NULL)
     mpi_call(::MPI_Info_dup, info, &priv_info);
   if (reduced_comm != MPI_COMM_NULL) {
@@ -279,7 +417,7 @@ Reader::begin(
       ::MPI_File_open,
       reduced_comm,
       path.c_str(),
-      MPI_MODE_RDONLY,
+      amode,
       priv_info,
       &file);
     mpi_call(::MPI_File_set_errhandler, file, MPI_ERRORS_RETURN);
@@ -303,16 +441,17 @@ Reader::begin(
     }
   }
 
-  TraversalState traversal_state(
-    reduced_comm,
-    iter_params,
-    outer_full_array_axis,
-    full_array_datatype,
-    full_array_dt_count,
-    tail_array_datatype,
-    tail_array_dt_count,
-    full_fileview_datatype,
-    tail_fileview_datatype);
+  traversal_state =
+    TraversalState(
+      reduced_comm,
+      iter_params,
+      outer_full_array_axis,
+      full_buffer_datatype,
+      full_buffer_dt_count,
+      tail_buffer_datatype,
+      tail_buffer_dt_count,
+      full_fileview_datatype,
+      tail_fileview_datatype);
 
   std::for_each(
     std::begin(*iter_params),
@@ -320,19 +459,6 @@ Reader::begin(
     [&traversal_state](const IterParams& ip) {
       traversal_state.data_index[ip.axis] = ip.origin;
     });
-
-  return
-    Reader(
-      ReaderMPIState(reduced_comm, priv_info, file, path),
-      std::make_shared<std::vector<ColumnAxisBase<MSColumns> > >(ms_shape),
-      iter_params,
-      buffer_order,
-      inner_fileview_axis,
-      ms_indexer,
-      buffer_size,
-      readahead,
-      std::move(traversal_state),
-      debug_log);
 }
 
 void
@@ -393,7 +519,8 @@ Reader::start_next() {
     m_next_ms_array =
       std::make_tuple(
         MSArray(),
-        std::variant<::MPI_Request,::MPI_Status>(std::in_place_index<1>));
+        std::variant<::MPI_Request,::MPI_Status>(std::in_place_index<1>),
+        0);
   }
 }
 
@@ -402,6 +529,20 @@ Reader::at_end() const {
   return !m_traversal_state.cont
     || m_traversal_state.eof
     || m_traversal_state.axis_iters.empty();
+}
+
+std::size_t
+Reader::buffer_length() const {
+  std::lock_guard<decltype(m_mtx)> lock(m_mtx);
+  auto indices = this->indices();
+  std::size_t result = 1;
+  std::for_each(
+    std::begin(indices),
+    std::end(indices),
+    [&result](auto& ibs) {
+      result *= ibs.num_elements();
+    });
+  return result;
 }
 
 void
@@ -613,17 +754,15 @@ Reader::init_traversal_partitions(
   // partition)...this is the fileview partition, as it defines the axis at
   // which the fileview must be created
   {
-    bool in_array_reordering = false;
+    bool ooo = false;
     auto ip = iter_params->rbegin();
     while (ip != iter_params->rend()) {
       if (!*inner_fileview_axis) {
-        if (out_of_order.count(ip->axis) > 0 || in_array_reordering) {
-          if (!(ip->fully_in_array
-                || ip->buffer_capacity == ip->block_len * ip->max_blocks))
-            *inner_fileview_axis = ip->axis;
-          else
-            in_array_reordering = true;
-        }
+        ooo = ooo || out_of_order.count(ip->axis) > 0;
+        if (ooo
+            && !(ip->fully_in_array
+                 || ip->buffer_capacity == ip->block_len * ip->max_blocks))
+          *inner_fileview_axis = ip->axis;
       }
       ip->within_fileview = !inner_fileview_axis->has_value();
       ++ip;
@@ -632,7 +771,7 @@ Reader::init_traversal_partitions(
 }
 
 std::tuple<std::unique_ptr<::MPI_Datatype, DatatypeDeleter>, unsigned>
-Reader::init_array_datatype(
+Reader::init_buffer_datatype(
   const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
   const std::shared_ptr<std::vector<IterParams> >& iter_params,
   bool ms_buffer_order,
@@ -671,22 +810,22 @@ Reader::init_array_datatype(
   std::size_t buffer_capacity = 0;
   std::size_t tail_buffer_capacity = 0;
   std::vector<ColumnAxisBase<MSColumns> > buffer;
-    std::for_each(
-      std::begin(reordered_ips),
-      std::end(reordered_ips),
-      [&](auto& ip) {
-        if (ip->fully_in_array) {
-          buffer.emplace_back(
-            static_cast<unsigned>(ip->axis),
-            ip->true_length());
-        } else if (ip->buffer_capacity > 0) {
-          buffer_capacity = ip->buffer_capacity;
-          tail_buffer_capacity = ip->true_length() % ip->buffer_capacity;
-          std::size_t capacity =
-            tail_array ? tail_buffer_capacity : buffer_capacity;
-          buffer.emplace_back(static_cast<unsigned>(ip->axis), capacity);
-        }
-      });
+  std::for_each(
+    std::begin(reordered_ips),
+    std::end(reordered_ips),
+    [&](auto& ip) {
+      if (ip->fully_in_array) {
+        buffer.emplace_back(
+          static_cast<unsigned>(ip->axis),
+          ip->true_length());
+      } else if (ip->buffer_capacity > 0) {
+        buffer_capacity = ip->buffer_capacity;
+        tail_buffer_capacity = ip->true_length() % ip->buffer_capacity;
+        std::size_t capacity =
+          tail_array ? tail_buffer_capacity : buffer_capacity;
+        buffer.emplace_back(static_cast<unsigned>(ip->axis), capacity);
+      }
+    });
 
   if (tail_array) {
     if (tail_buffer_capacity == 0)
@@ -703,38 +842,43 @@ Reader::init_array_datatype(
   unsigned result_dt_count = 1;
   for (auto ax = ms_shape.crbegin(); ax != ms_shape.crend(); ++ax) {
     auto ip = find_iter_params(iter_params, ax->id());
-    if (ip->fully_in_array || ip->buffer_capacity > 0) {
+    if (ip->fully_in_array || ip->buffer_capacity > 1) {
       auto count = ip->fully_in_array ? ip->true_length() : buffer_capacity;
-      if (count > 1) {
-        auto i0 = buffer_indexer->offset_of_(index);
-        ++index[ip->axis];
-        auto i1 = buffer_indexer->offset_of_(index);
-        --index[ip->axis];
-        if (debug_log) {
-          std::clog << "(" << rank << ") "
-                    << mscol_nickname(ip->axis)
-                    << " dv stride " << i1 - i0
-                    << std::endl;
-        }
-        auto stride = (i1 - i0) * sizeof(std::complex<float>);
-        ::MPI_Aint lb, extent;
-        mpi_call(::MPI_Type_get_extent, *result_dt, &lb, &extent);
-        if (stride == static_cast<std::size_t>(extent)) {
-          result_dt_count *= count;
-        } else {
-          auto dt = std::move(result_dt);
-          result_dt = datatype();
-          mpi_call(
-            ::MPI_Type_create_hvector,
-            count,
-            result_dt_count,
-            stride,
-            *dt,
-            result_dt.get());
-          result_dt_count = 1;
-        }
+      auto i0 = buffer_indexer->offset_of_(index);
+      ++index[ip->axis];
+      auto i1 = buffer_indexer->offset_of_(index);
+      --index[ip->axis];
+      if (debug_log) {
+        std::clog << "(" << rank << ") "
+                  << mscol_nickname(ip->axis)
+                  << " dv stride " << i1 - i0
+                  << std::endl;
+      }
+      auto stride = (i1 - i0) * sizeof(std::complex<float>);
+      ::MPI_Aint lb, extent;
+      mpi_call(::MPI_Type_get_extent, *result_dt, &lb, &extent);
+      if (stride == result_dt_count * static_cast<std::size_t>(extent)) {
+        result_dt_count *= count;
+      } else {
+        auto dt = std::move(result_dt);
+        result_dt = datatype();
+        mpi_call(
+          ::MPI_Type_create_hvector,
+          count,
+          result_dt_count,
+          stride,
+          *dt,
+          result_dt.get());
+        result_dt_count = 1;
       }
     }
+  }
+  if (debug_log) {
+    ::MPI_Count size;
+    mpi_call(::MPI_Type_size_x, *result_dt, &size);
+    std::clog << "(" << rank << ") buffer datatype size "
+              << size / sizeof(std::complex<float>)
+              << ", count " << result_dt_count << std::endl;
   }
   if (*result_dt != MPI_CXX_FLOAT_COMPLEX)
     mpi_call(::MPI_Type_commit, result_dt.get());
@@ -754,12 +898,13 @@ Reader::init_fileview(
   ArrayIndexer<MSColumns>::index index;
   std::size_t tail_size;
   std::for_each(
-    std::begin(*iter_params),
-    std::end(*iter_params),
-    [&](const IterParams& ip) {
-      index[ip.axis] = 0;
-      if (ip.buffer_capacity > 0) {
-        tail_size = ip.true_length() % ip.buffer_capacity;
+    ms_shape.crbegin(),
+    ms_shape.crend(),
+    [&](auto& ax) {
+      auto ip = find_iter_params(iter_params, ax.id());
+      index[ip->axis] = 0;
+      if (!ip->within_fileview && ip->buffer_capacity > 0) {
+        tail_size = ip->true_length() % ip->buffer_capacity;
         needs_tail = (tail_size != 0);
       }
     });
@@ -771,65 +916,91 @@ Reader::init_fileview(
   auto result = datatype(MPI_CXX_FLOAT_COMPLEX);
   unsigned dt_count = 1;
 
+  bool prev_within_fileview = true;
   auto ms_axis = ms_shape.crbegin();
-  while (ms_axis != ms_shape.crend()) {
-    auto ip = find_iter_params(iter_params, ms_axis->id());
-    if (ip->within_fileview || ip->buffer_capacity > 1) {
-      std::size_t count, num_blocks, block_len, terminal_block_len;
-      if (ip->within_fileview) {
-        count = ip->true_length();
-        num_blocks = ip->max_blocks;
-        block_len = ip->block_len;
-        terminal_block_len = ip->terminal_block_len;
-      } else {
-        count =
-          (tail_fileview
-           ? ip->true_length() % ip->buffer_capacity
-           : ip->buffer_capacity);
-        num_blocks = (count + ip->block_len - 1) / ip->block_len;
-        block_len = std::min(count, ip->block_len);
-        terminal_block_len = (
-          (count % block_len) > 0
-          ? count % block_len
-          : block_len);
-      }
-      if (count > 1) {
-        // resize current fileview_datatype to equal stride between elements
-        // on this axis
+  do {
+    auto ip = (
+      (ms_axis != ms_shape.crend())
+      ? find_iter_params(iter_params, ms_axis->id())
+      : nullptr);
+    if (prev_within_fileview
+        || (ip && (ip->within_fileview || ip->buffer_capacity > 1))) {
+      std::size_t count, num_blocks, block_len, terminal_block_len, unit_stride;
+      if (ip) {
+        if (ip->within_fileview) {
+          count = ip->true_length();
+          num_blocks = ip->max_blocks;
+          block_len = ip->block_len;
+          terminal_block_len = ip->terminal_block_len;
+        } else if (ip->buffer_capacity > 1) {
+          count =
+            (tail_fileview
+             ? ip->true_length() % ip->buffer_capacity
+             : ip->buffer_capacity);
+          num_blocks = (count + ip->block_len - 1) / ip->block_len;
+          block_len = std::min(count, ip->block_len);
+          terminal_block_len = (
+            (count % block_len) > 0
+            ? count % block_len
+            : block_len);
+        } else /* prev_within_fileview */ {
+          count = 1;
+          num_blocks = 1;
+          block_len = 1;
+          terminal_block_len = 1;
+        }
         auto i0 = ms_indexer->offset_of_(index);
         ++index[ip->axis];
         auto i1 = ms_indexer->offset_of_(index);
         --index[ip->axis];
-        auto unit_stride = (i1 - i0) * sizeof(std::complex<float>);
-        auto dt1 = std::move(result);
-        ::MPI_Aint lb1, extent1;
-        mpi_call(::MPI_Type_get_extent, *dt1, &lb1, &extent1);
-        if (dt_count * static_cast<std::size_t>(extent1) != unit_stride) {
-          if (dt_count > 1) {
-            result = datatype();
-            mpi_call(::MPI_Type_contiguous, dt_count, *dt1, result.get());
-            dt1 = std::move(result);
-            dt_count = 1;
-          }
+        unit_stride = i1 - i0;
+      } else /* prev_within_fileview */ {
+        count = 1;
+        num_blocks = 1;
+        block_len = 1;
+        terminal_block_len = 1;
+        unit_stride = 1;
+        std::for_each(
+          std::begin(ms_shape),
+          std::end(ms_shape),
+          [&unit_stride](auto& ax) { unit_stride *= ax.length(); });
+      }
+      // resize current fileview_datatype to equal stride between elements
+      // on this axis
+      auto unit_hstride = unit_stride * sizeof(std::complex<float>);
+      auto dt1 = std::move(result);
+      ::MPI_Aint lb1, extent1;
+      mpi_call(::MPI_Type_get_extent, *dt1, &lb1, &extent1);
+      if (dt_count * static_cast<std::size_t>(extent1) != unit_hstride) {
+        if (dt_count > 1) {
           result = datatype();
-          mpi_call(
-            ::MPI_Type_create_resized,
-            *dt1,
-            lb1,
-            unit_stride,
-            result.get());
+          mpi_call(::MPI_Type_contiguous, dt_count, *dt1, result.get());
           dt1 = std::move(result);
-          extent1 = unit_stride;
+          dt_count = 1;
         }
+        result = datatype();
+        mpi_call(
+          ::MPI_Type_create_resized,
+          *dt1,
+          lb1,
+          unit_hstride,
+          result.get());
+        dt1 = std::move(result);
+        extent1 = unit_stride;
+      }
 
+      if (count == 1) {
+        result = std::move(dt1);
+      } else {
         // buffer capacity is assumed to be a multiple of block_len
         assert(ip->buffer_capacity % ip->block_len == 0);
 
         // create (blocked) vector of fileview_datatype elements
+        auto i0 = ms_indexer->offset_of_(index);
         index[ip->axis] += ip->stride;
         auto is = ms_indexer->offset_of_(index);
         index[ip->axis] -= ip->stride;
-        auto stride = (is - i0) / (i1 - i0);
+        auto stride = (is - i0) / unit_stride;
         if (block_len == stride) {
           dt_count *= count;
           result = std::move(dt1);
@@ -884,41 +1055,28 @@ Reader::init_fileview(
         }
       }
     }
+    prev_within_fileview = prev_within_fileview && ip->within_fileview;
     ++ms_axis;
-  }
+  } while (ms_axis != ms_shape.crend());
 
-  // fix up the stride for the final fileview datatype
-  auto ms_top = ms_shape[0].id();
-  auto i0 = ms_indexer->offset_of_(index);
-  ++index[ms_top];
-  auto i1 = ms_indexer->offset_of_(index);
-  --index[ms_top];
-  auto unit_stride = (i1 - i0) * sizeof(std::complex<float>);
-  ::MPI_Aint lb, extent;
-  mpi_call(::MPI_Type_get_extent, *result, &lb, &extent);
-  if (dt_count * static_cast<std::size_t>(extent) != unit_stride) {
+  if (dt_count > 1) {
     auto dt1 = std::move(result);
-    if (dt_count > 1) {
-      result = datatype();
-      mpi_call(::MPI_Type_contiguous, dt_count, *dt1, result.get());
-      dt1 = std::move(result);
-      dt_count = 1;
-    }
     result = datatype();
-    mpi_call(::MPI_Type_create_resized, *dt1, lb, unit_stride, result.get());
-  }
-
-  if (debug_log) {
-    ::MPI_Count size;
-    mpi_call(::MPI_Type_size_x, *result, &size);
-    std::clog << "(" << rank
-              << ") fileview datatype size "
-              << dt_count << " x " << size / sizeof(std::complex<float>)
-              << std::endl;
+    mpi_call(::MPI_Type_contiguous, dt_count, *dt1, result.get());
+    dt_count = 1;
   }
 
   if (*result != MPI_CXX_FLOAT_COMPLEX)
     mpi_call(::MPI_Type_commit, result.get());
+
+  if (debug_log) {
+    ::MPI_Count size;
+    mpi_call(::MPI_Type_size_x, *result, &size);
+    std::clog << "(" << rank << ") fileview datatype size "
+              << size / sizeof(std::complex<float>)
+              << ", count " << dt_count
+              << std::endl;
+  }
   return result;
 }
 
@@ -1016,7 +1174,8 @@ Reader::make_index_block_sequences(
 
 std::tuple<
   std::unique_ptr<std::complex<float> >,
-  std::variant<::MPI_Request, ::MPI_Status> >
+  std::variant<::MPI_Request, ::MPI_Status>,
+  ::MPI_Offset>
 Reader::read_arrays(
   TraversalState& traversal_state,
   bool nonblocking,
@@ -1049,7 +1208,7 @@ Reader::read_arrays(
 
   std::shared_ptr<const ::MPI_Datatype> dt;
   unsigned count;
-  std::tie(dt, count) = traversal_state.array_datatype();
+  std::tie(dt, count) = traversal_state.buffer_datatype();
 
   std::unique_ptr<std::complex<float> > buffer;
   if (traversal_state.count > 0)
@@ -1058,12 +1217,17 @@ Reader::read_arrays(
   else
     count = 0;
 
+  ::MPI_Offset start;
+  mpi_call(::MPI_File_get_position, file, &start);
+
   if (!nonblocking) {
     std::tuple<
       std::unique_ptr<std::complex<float> >,
-      std::variant<::MPI_Request, ::MPI_Status> > result(
+      std::variant<::MPI_Request, ::MPI_Status>,
+      ::MPI_Offset> result(
         std::move(buffer),
-        std::variant<::MPI_Request, ::MPI_Status>(std::in_place_index<1>));
+        std::variant<::MPI_Request, ::MPI_Status>(std::in_place_index<1>),
+        start);
     mpi_call(
       ::MPI_File_read_all,
       file,
@@ -1073,23 +1237,29 @@ Reader::read_arrays(
       &std::get<::MPI_Status>(std::get<1>(result)));
 
     // TODO: move this block
-    // int st_count;
-    // mpi_call(::MPI_Get_count, &status, *dt, &st_count);
-    // if (count != static_cast<unsigned>(st_count)) {
-    //   buffer.reset();
-    //   if (m_debug_log)
-    //     std::clog << "(" << m_rank << ") "
-    //               << "expected " << count
-    //               << ", got " << st_count
-    //               << std::endl;
-    // }
+    int st_count;
+    mpi_call(
+      ::MPI_Get_count,
+      &std::get<::MPI_Status>(std::get<1>(result)),
+      *dt,
+      &st_count);
+    if (count != static_cast<unsigned>(st_count)) {
+      buffer.reset();
+      if (m_debug_log)
+        std::clog << "(" << m_rank << ") "
+                  << "expected " << count
+                  << ", got " << st_count
+                  << std::endl;
+    }
     return result;
   } else {
     std::tuple<
       std::unique_ptr<std::complex<float> >,
-      std::variant<::MPI_Request, ::MPI_Status> > result(
+      std::variant<::MPI_Request, ::MPI_Status>,
+      ::MPI_Offset> result(
         std::move(buffer),
-        std::variant<::MPI_Request, ::MPI_Status>(std::in_place_index<0>));
+        std::variant<::MPI_Request, ::MPI_Status>(std::in_place_index<0>),
+        start);
     mpi_call(
       ::MPI_File_iread_all,
       file,
@@ -1170,7 +1340,7 @@ Reader::advance_to_buffer_end(TraversalState& traversal_state) const {
   }
 }
 
-std::tuple<MSArray, std::variant<::MPI_Request, ::MPI_Status> >
+std::tuple<MSArray, std::variant<::MPI_Request, ::MPI_Status>, ::MPI_Offset>
 Reader::read_next_buffer(
   TraversalState& traversal_state,
   bool nonblocking,
@@ -1183,14 +1353,15 @@ Reader::read_next_buffer(
     std::begin(blocks),
     std::end(blocks),
     [this](const IndexBlockSequence<MSColumns>& ibs0,
-       const IndexBlockSequence<MSColumns>& ibs1) {
+           const IndexBlockSequence<MSColumns>& ibs1) {
       return buffer_order_compare(ibs0.m_axis, ibs1.m_axis);
     });
   std::shared_ptr<std::complex<float> > buffer;
   std::variant<::MPI_Request, ::MPI_Status> rs;
-  std::tie(buffer, rs) =
+  ::MPI_Offset start;
+  std::tie(buffer, rs, start) =
     read_arrays(traversal_state, nonblocking, blocks, file);
-  return std::make_tuple(MSArray(std::move(blocks), buffer), rs);
+  return std::make_tuple(MSArray(std::move(blocks), buffer), rs, start);
 }
 
 bool
@@ -1206,4 +1377,9 @@ Reader::buffer_order_compare(const MSColumns& col0, const MSColumns& col1)
   if (p1 == std::end(*m_buffer_order))
     return false;
   return p0 < p1;
+}
+
+void
+mpims::swap(Reader& r1, Reader& r2) {
+  r1.swap(r2);
 }

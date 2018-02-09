@@ -25,7 +25,8 @@ endif("${isSystemDir}" STREQUAL "-1")
 add_library(mpims SHARED
   mpims.cc
   MSColumns.cc
-  Reader.cc)
+  Reader.cc
+  Writer.cc)
 target_include_directories(mpims PRIVATE
   ${MPI_CXX_INCLUDE_PATH}
   .)
@@ -54,6 +55,7 @@ install(FILES
   MSColumns.h
   Reader.h
   ReaderMPIState.h
+  Writer.h
   DESTINATION include
   CONFIGURATIONS Release
   PERMISSIONS OWNER_WRITE OWNER_READ GROUP_READ WORLD_READ)
@@ -77,5 +79,16 @@ target_include_directories(preadcol PRIVATE
 target_compile_options(preadcol PRIVATE
   ${MPI_CXX_COMPILE_FLAGS})
 target_link_libraries(preadcol
+  ${MPI_CXX_LIBRARIES}
+  mpims)
+
+add_executable(writer-test
+  writer-test.cc)
+target_include_directories(writer-test PRIVATE
+  ${MPI_CXX_INCLUDE_PATH}
+  .)
+target_compile_options(writer-test PRIVATE
+  ${MPI_CXX_COMPILE_FLAGS})
+target_link_libraries(writer-test
   ${MPI_CXX_LIBRARIES}
   mpims)
