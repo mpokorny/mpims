@@ -840,39 +840,43 @@ Reader::init_buffer_datatype(
 
   auto result_dt = datatype(MPI_CXX_FLOAT_COMPLEX);
   unsigned result_dt_count = 1;
-  for (auto ax = ms_shape.crbegin(); ax != ms_shape.crend(); ++ax) {
-    auto ip = find_iter_params(iter_params, ax->id());
-    if (ip->fully_in_array || ip->buffer_capacity > 1) {
-      auto count = ip->fully_in_array ? ip->true_length() : buffer_capacity;
-      auto i0 = buffer_indexer->offset_of_(index);
-      ++index[ip->axis];
-      auto i1 = buffer_indexer->offset_of_(index);
-      --index[ip->axis];
-      if (debug_log) {
-        std::clog << "(" << rank << ") "
-                  << mscol_nickname(ip->axis)
-                  << " dv stride " << i1 - i0
-                  << std::endl;
+  std::for_each(
+    ms_shape.crbegin(),
+    ms_shape.crend(),
+    [&](auto& ax) {
+      auto ip = find_iter_params(iter_params, ax.id());
+      if (ip->fully_in_array || ip->buffer_capacity > 1) {
+        auto count = ip->fully_in_array ? ip->true_length() : buffer_capacity;
+        auto i0 = buffer_indexer->offset_of_(index);
+        ++index[ip->axis];
+        auto i1 = buffer_indexer->offset_of_(index);
+        --index[ip->axis];
+        if (debug_log) {
+          std::clog << "(" << rank << ") "
+                    << mscol_nickname(ip->axis)
+                    << " dv stride " << i1 - i0
+                    << std::endl;
+        }
+        auto stride = (i1 - i0) * sizeof(std::complex<float>);
+        ::MPI_Aint lb = 0, extent = 0;
+        mpi_call(::MPI_Type_get_extent, *result_dt, &lb, &extent);
+        if (stride == result_dt_count * static_cast<std::size_t>(extent)) {
+          result_dt_count *= count;
+        } else {
+          auto dt = std::move(result_dt);
+          result_dt = datatype();
+          mpi_call(
+            ::MPI_Type_create_hvector,
+            count,
+            result_dt_count,
+            stride,
+            *dt,
+            result_dt.get());
+          result_dt_count = 1;
+        }
       }
-      auto stride = (i1 - i0) * sizeof(std::complex<float>);
-      ::MPI_Aint lb, extent;
-      mpi_call(::MPI_Type_get_extent, *result_dt, &lb, &extent);
-      if (stride == result_dt_count * static_cast<std::size_t>(extent)) {
-        result_dt_count *= count;
-      } else {
-        auto dt = std::move(result_dt);
-        result_dt = datatype();
-        mpi_call(
-          ::MPI_Type_create_hvector,
-          count,
-          result_dt_count,
-          stride,
-          *dt,
-          result_dt.get());
-        result_dt_count = 1;
-      }
-    }
-  }
+    });
+
   if (debug_log) {
     ::MPI_Count size;
     mpi_call(::MPI_Type_size_x, *result_dt, &size);
