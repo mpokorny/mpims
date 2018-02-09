@@ -285,92 +285,93 @@ main(int argc, char* argv[]) {
 
   for (auto& msao : ms_axis_orders) {
     for (auto& bs : buffer_sizes) {
-      ostringstream output;
-      output << "========= ms axis order "
-             << colnames(msao)
-             << "; write buffer_size "
-             << num_elements(bs)
-             << " ========="
-             << endl;
-      string path(argv[1]);
-      path += "/wtXXXXXX";
-      if (my_rank == 0) {
-        int fd = mkstemp(const_cast<char*>(path.c_str()));
-        if (fd == -1) {
-          cerr << "Failed to open temporary file: "
-                    << strerror(errno)
-                    << endl;
-          return EXIT_FAILURE;
-        }
-        close(fd);
-      }
-      mpi_call(
-        ::MPI_Bcast,
-        const_cast<char*>(path.c_str()),
-        path.size(),
-        MPI_CHAR,
-        0,
-        MPI_COMM_WORLD);
-
-      vector<ColumnAxisBase<MSColumns> > ms_shape;
-      transform(
-        begin(msao),
-        end(msao),
-        back_inserter(ms_shape),
-        [&dimensions](auto& col) {
-          return ColumnAxisBase<MSColumns>(
-            static_cast<unsigned>(col),
-            dimensions[col]);
-        });
-
-      {
-        auto writer =
-          Writer::begin(
-            path,
-            MPI_COMM_WORLD,
-            MPI_INFO_NULL,
-            ms_shape,
-            msao,
-            true,
-            pgrid,
-            bs);
-        while (writer != Writer::end()) {
-          if (writer.buffer_length() > 0) {
-            unique_ptr<complex<float> > buffer = writer.allocate_buffer();
-            write_buffer(buffer.get(), writer.indices());
-            *writer = move(buffer);
+      for (auto& tvo : ms_axis_orders) {
+        ostringstream output;
+        output << "========= ms axis order "
+               << colnames(msao)
+               << "; write buffer_size "
+               << num_elements(bs)
+               << " ========="
+               << endl;
+        string path(argv[1]);
+        path += "/wtXXXXXX";
+        if (my_rank == 0) {
+          int fd = mkstemp(const_cast<char*>(path.c_str()));
+          if (fd == -1) {
+            cerr << "Failed to open temporary file: "
+                 << strerror(errno)
+                 << endl;
+            return EXIT_FAILURE;
           }
-          ++writer;
+          close(fd);
         }
-      }
+        mpi_call(
+          ::MPI_Bcast,
+          const_cast<char*>(path.c_str()),
+          path.size(),
+          MPI_CHAR,
+          0,
+          MPI_COMM_WORLD);
 
-      // read back
-      if (my_rank == 0) {
-        auto reader =
-          Reader::begin(
-            path,
-            MPI_COMM_SELF,
-            MPI_INFO_NULL,
-            ms_shape,
-            read_order,
-            true,
-            read_pgrid,
-            max_buffer_size,
-            false);
-        while (reader != Reader::end()) {
-          auto array = *reader;
-          if (array) {
-            if (cb(reader.indices(), array, output))
+        vector<ColumnAxisBase<MSColumns> > ms_shape;
+        transform(
+          begin(msao),
+          end(msao),
+          back_inserter(ms_shape),
+          [&dimensions](auto& col) {
+            return ColumnAxisBase<MSColumns>(
+              static_cast<unsigned>(col),
+              dimensions[col]);
+          });
+
+        {
+          auto writer =
+            Writer::begin(
+              path,
+              MPI_COMM_WORLD,
+              MPI_INFO_NULL,
+              ms_shape,
+              tvo,
+              pgrid,
+              bs);
+          while (writer != Writer::end()) {
+            if (writer.buffer_length() > 0) {
+              unique_ptr<complex<float> > buffer = writer.allocate_buffer();
+              write_buffer(buffer.get(), writer.indices());
+              *writer = move(buffer);
+            }
+            ++writer;
+          }
+        }
+
+        // read back
+        if (my_rank == 0) {
+          auto reader =
+            Reader::begin(
+              path,
+              MPI_COMM_SELF,
+              MPI_INFO_NULL,
+              ms_shape,
+              read_order,
+              true,
+              read_pgrid,
+              max_buffer_size,
+              false);
+          while (reader != Reader::end()) {
+            auto array = *reader;
+            if (array) {
+              if (cb(reader.indices(), array, output))
+                ++reader;
+              else
+                reader.interrupt();
+            }
+            else {
               ++reader;
-            else
-              reader.interrupt();
+            }
           }
-          else {
-            ++reader;
-          }
+          cout << output.str();
+          remove(path.c_str());
         }
-        cout << output.str();
-        remove(path.c_str());
       }
     }
   }

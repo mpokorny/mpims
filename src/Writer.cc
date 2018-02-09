@@ -1,4 +1,6 @@
 /* -*- mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; -*- */
+#include <algorithm>
+
 #include <Writer.h>
 
 using namespace mpims;
@@ -10,11 +12,17 @@ Writer::begin(
   ::MPI_Info info,
   const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
   const std::vector<MSColumns>& traversal_order,
-  bool ms_buffer_order,
   std::unordered_map<MSColumns, DataDistribution>& pgrid,
   std::size_t max_buffer_size,
   /* bool readahead, */
   bool debug_log) {
+
+  std::vector<MSColumns> msao;
+  std::transform(
+    std::begin(ms_shape),
+    std::end(ms_shape),
+    std::back_inserter(msao),
+    [](auto& ax) { return ax.id(); });
 
   return Writer(
     Reader::wbegin(
@@ -23,7 +31,7 @@ Writer::begin(
       info,
       ms_shape,
       traversal_order,
-      ms_buffer_order,
+      msao == traversal_order,
       pgrid,
       max_buffer_size,
       false /* readahead */,

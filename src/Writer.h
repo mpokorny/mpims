@@ -168,7 +168,6 @@ public:
     ::MPI_Info info,
     const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
     const std::vector<MSColumns>& traversal_order,
-    bool ms_buffer_order,
     std::unordered_map<MSColumns, DataDistribution>& pgrid,
     std::size_t max_buffer_size,
     /* bool readahead, */
