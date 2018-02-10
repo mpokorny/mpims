@@ -42,8 +42,8 @@ but this provides a place for future additions.
 
 ### Status ###
 
-All of the goals above are satisfied by the current code with the major
-exception being no provision for write access.
+All of the goals above are satisfied by the current code. The writing
+functionality is currently only available in synchronous mode.
 
 ## Possible extensions ##
 
