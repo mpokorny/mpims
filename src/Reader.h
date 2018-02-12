@@ -543,6 +543,7 @@ protected:
 
   static std::unique_ptr<::MPI_Datatype, DatatypeDeleter>
     init_fileview(
+      ::MPI_File file,
       const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
       const std::shared_ptr<std::vector<IterParams> >& iter_params,
       const std::shared_ptr<ArrayIndexer<MSColumns> >& ms_indexer,
