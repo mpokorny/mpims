@@ -2,6 +2,7 @@
 #ifndef COLUMN_AXIS_H_
 #define COLUMN_AXIS_H_
 
+#include <optional>
 #include <string>
 
 namespace mpims {
@@ -15,7 +16,7 @@ public:
     return static_cast<Columns>(m_col);
   }
 
-  std::size_t
+  std::optional<std::size_t>
   length() const {
     return m_length;
   }
@@ -25,10 +26,15 @@ public:
     , m_length(length) {
   }
 
+  bool
+  is_unbounded() const {
+    return !m_length;
+  }
+
 protected:
   unsigned m_col;
 
-  std::size_t m_length;
+  std::optional<std::size_t> m_length;
 };
 
 template <typename Columns,
@@ -37,6 +43,12 @@ class ColumnAxis
   : public ColumnAxisBase<Columns> {
 
 public:
+
+  ColumnAxis()
+    : ColumnAxisBase<Columns>(
+      static_cast<unsigned>(Column),
+      std::optional<std::size_t>()) {
+  }
 
   ColumnAxis(std::size_t length)
     : ColumnAxisBase<Columns>(static_cast<unsigned>(Column), length) {

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <unordered_map>
@@ -29,10 +30,10 @@ public:
 
   typedef std::unordered_map<Columns, std::size_t> index;
 
-  virtual std::size_t
+  virtual std::optional<std::size_t>
   offset_of(const index&) const  = 0;
 
-  virtual std::size_t
+  virtual std::optional<std::size_t>
   offset_of_(const index&) const  = 0;
 
   virtual std::shared_ptr<ArrayIndexer>
@@ -89,8 +90,7 @@ public:
   }
 
   bool
-  is_valid_index(const index& ix)
-    const {
+  is_valid_index(const index& ix) const {
 
     std::set<Columns> cols;
     std::for_each(
@@ -103,7 +103,7 @@ public:
       std::begin(m_axis_ids), std::end(m_axis_ids), std::begin(cols));
   }
 
-  std::size_t
+  std::optional<std::size_t>
   offset_of(const index& ix) const override {
 
     if (!is_valid_index(ix))
@@ -112,24 +112,26 @@ public:
     return offset_of_(ix);
   }
 
-  std::size_t
-  offset_of_(const index& ix) const {
+  std::optional<std::size_t>
+  offset_of_(const index& ix) const override {
 
-    auto axes = m_axes.cbegin();
-    std::size_t result = ix.at(axes->id());
+    auto axes = std::begin(m_axes);
+    std::optional<std::size_t> result = ix.at(axes->id());
     ++axes;
     std::for_each(
       axes,
-      m_axes.cend(),
-      [&result, &ix] (const ColumnAxisBase<Columns>& ax) mutable {
-        result = ix.at(ax.id()) + ax.length() * result;
+      std::end(m_axes),
+      [&result, &ix] (const ColumnAxisBase<Columns>& ax) {
+        if (result && !ax.is_unbounded())
+          result = ix.at(ax.id()) + ax.length().value() * result.value();
+        else
+          result = std::nullopt;
       });
     return result;
   }
 
   std::shared_ptr<ArrayIndexer<Columns> >
-  slice(const index& fixed)
-    const override {
+  slice(const index& fixed) const override {
 
     std::shared_ptr<ArraySliceIndexer<Columns> > result(
       new ArraySliceIndexer<Columns>(m_self.lock(), fixed));
@@ -174,13 +176,13 @@ public:
     , m_fixed(std::move(fixed)) {
   }
 
-  std::size_t
+  std::optional<std::size_t>
   offset_of(const index& ix) const override {
 
     return m_full->offset_of(*with_fixed(ix));
   }
 
-  std::size_t
+  std::optional<std::size_t>
   offset_of_(const index& ix) const override {
 
     return m_full->offset_of_(*with_fixed(ix));

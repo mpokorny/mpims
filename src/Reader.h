@@ -35,6 +35,14 @@ class Reader
 
 public:
 
+  class UnboundedArrayError
+    : std::runtime_error {
+  public:
+    explicit UnboundedArrayError()
+      : std::runtime_error("unbounded internal array axis") {
+    }
+  };
+
   class IterParams;
   class AxisIter;
 
@@ -260,8 +268,9 @@ public:
     MSColumns axis;
     bool fully_in_array, within_fileview;
     std::size_t buffer_capacity, array_length;
-    std::size_t length, origin, stride, block_len, max_blocks,
+    std::size_t origin, stride, block_len,
       terminal_block_len, max_terminal_block_len;
+    std::optional<std::size_t> length, max_blocks;
 
     bool
     operator==(const IterParams& rhs) const {
@@ -284,9 +293,12 @@ public:
       return !(operator==(rhs));
     }
 
-    std::size_t
+    std::optional<std::size_t>
     true_length() const {
-      return block_len * (max_blocks - 1) + terminal_block_len;
+      if (max_blocks.has_value())
+        return block_len * (max_blocks.value() - 1) + terminal_block_len;
+      else
+        return std::nullopt;
     }
   };
 
@@ -326,7 +338,10 @@ public:
       while (n > 0 && !at_end) {
         block = index / params->stride;
         auto block_origin = params->origin + block * params->stride;
-        bool terminal_block = block == params->max_blocks - 1;
+        bool terminal_block =
+          (params->max_blocks
+           ? (block == params->max_blocks.value() - 1)
+           : false);
         auto block_len =
           (terminal_block ? params->terminal_block_len : params->block_len);
         ++index;
@@ -334,7 +349,10 @@ public:
           ++block;
           index = params->origin + block * params->stride;
           block_origin = params->origin + block * params->stride;
-          terminal_block = block == params->max_blocks - 1;
+          terminal_block = (
+            params->max_blocks
+            ? (block == params->max_blocks.value() - 1)
+            : false);
           block_len =
             (terminal_block ? params->terminal_block_len : params->block_len);
         }
@@ -346,14 +364,18 @@ public:
       }
     }
 
-    std::size_t
+    std::optional<std::size_t>
     num_remaining() const {
       if (at_end || !at_data)
         return 0;
-      auto block_origin = params->origin + block * params->stride;
-      return
-        params->true_length()
-        - (block * params->block_len + index - block_origin);
+      auto true_length = params->true_length();
+      if (true_length) {
+        auto block_origin = params->origin + block * params->stride;
+        return (true_length.value()
+                - (block * params->block_len + index - block_origin));
+      } else {
+        return std::nullopt;
+      }
     }
 
     void

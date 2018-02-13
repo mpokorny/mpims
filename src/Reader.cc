@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cassert>
 #include <complex>
+#include <cstdint>
 #include <iostream>
 #include <stdexcept>
 #include <unordered_set>
@@ -200,15 +201,6 @@ Reader::wbegin(
     buffer_size,
     traversal_state);
 
-  std::size_t total_length = 1;
-  std::for_each(
-    std::begin(ms_shape),
-    std::end(ms_shape),
-    [&total_length](auto& ax) {
-      total_length *= ax.length();
-    });
-  MPI_File_set_size(file, sizeof(std::complex<float>) * total_length);
-
   return
     Reader(
       MPIState(reduced_comm, priv_info, file, path),
@@ -263,9 +255,12 @@ Reader::initialize(
         [&pcol](const ColumnAxisBase<MSColumns>& ax) {
           return ax.id() == pcol;
         });
-    pdist.block_size = std::min(ax->length(), pdist.block_size);
+    pdist.block_size =
+      std::min(ax->length().value_or(SIZE_MAX), pdist.block_size);
     pdist.num_processes =
-      std::min(ceil(ax->length(), pdist.block_size), pdist.num_processes);
+      (ax->is_unbounded()
+       ? pdist.num_processes
+       : std::min(ceil(ax->length(), pdist.block_size), pdist.num_processes));
   }
 
   // compute process grid size
@@ -596,7 +591,7 @@ Reader::init_iterparams(
     [&] (const ColumnAxisBase<MSColumns>& ax) {
       // find index of this column in traversal_order
       MSColumns col = ax.id();
-      std::size_t length = ax.length();
+      auto length = ax.length();
       std::size_t traversal_index = 0;
       while (traversal_order[traversal_index] != col)
         ++traversal_index;
@@ -615,35 +610,45 @@ Reader::init_iterparams(
       std::size_t grid_len = num_processes;
       std::size_t order = (rank / dist_size) % grid_len;
       std::size_t block_len = block_size;
-      assert(block_len <= length);
+      assert(!length || block_len <= length.value());
       std::size_t origin = order * block_len;
       std::size_t stride = grid_len * block_len;
-      std::size_t max_blocks = ceil(length, stride);
-      std::size_t blocked_rem = ceil(length, block_len) % grid_len;
+      std::optional<std::size_t> max_blocks =
+        (length
+         ? std::optional<std::size_t>(ceil(length.value(), stride))
+         : std::nullopt);
+      std::size_t blocked_rem =
+        (length
+         ? (ceil(length.value(), block_len) % grid_len)
+         : 0);
       std::size_t terminal_block_len;
       std::size_t max_terminal_block_len;
       if (blocked_rem == 0) {
         terminal_block_len = block_len;
         max_terminal_block_len = block_len;
       } else if (blocked_rem == 1) {
-        terminal_block_len = ((order == 0) ? (length % block_len) : 0);
-        max_terminal_block_len = length % block_len;
+        // assert(length.has_value());
+        terminal_block_len = ((order == 0) ? (length.value() % block_len) : 0);
+        max_terminal_block_len = length.value() % block_len;
       } else {
+        // assert(length.has_value());
         terminal_block_len =
           ((order < blocked_rem - 1)
            ? block_len
-           : ((order == blocked_rem - 1) ? (length % block_len) : 0));
+           : ((order == blocked_rem - 1) ? (length.value() % block_len) : 0));
         max_terminal_block_len = block_len;
       }
       (*iter_params)[traversal_index] =
         IterParams { col, false, false, 0, array_length,
-                     length, origin, stride, block_len,
-                     max_blocks, terminal_block_len, max_terminal_block_len };
+                     origin, stride, block_len, terminal_block_len,
+                     max_terminal_block_len, length, max_blocks };
       if (debug_log) {
+        auto l = (*iter_params)[traversal_index].length;
+        auto mb = (*iter_params)[traversal_index].max_blocks;
         std::clog << "(" << rank << ") "
                   << mscol_nickname(col)
                   << " length: "
-                  << (*iter_params)[traversal_index].length
+                  << (l ? std::to_string(l.value()) : "unbounded")
                   << ", origin: "
                   << (*iter_params)[traversal_index].origin
                   << ", stride: "
@@ -651,7 +656,7 @@ Reader::init_iterparams(
                   << ", block_len: "
                   << (*iter_params)[traversal_index].block_len
                   << ", max_blocks: "
-                  << (*iter_params)[traversal_index].max_blocks
+                  << (mb ? std::to_string(mb.value()) : "unbounded")
                   << ", terminal_block_len: "
                   << (*iter_params)[traversal_index].terminal_block_len
                   << ", max_terminal_block_len: "
@@ -681,19 +686,23 @@ Reader::init_traversal_partitions(
   auto start_buffer = iter_params->rbegin();
   while (start_buffer != iter_params->rend()) {
     start_buffer->array_length = array_length;
-    std::size_t full_len = start_buffer->block_len * start_buffer->max_blocks;
-    array_length *= full_len;
     std::size_t len =
       std::min(
         (max_buffer_length / start_buffer->array_length)
         / start_buffer->block_len,
-        start_buffer->max_blocks)
+        start_buffer->max_blocks.value_or(SIZE_MAX))
       * start_buffer->block_len;
+    std::optional<std::size_t> full_len =
+      (start_buffer->max_blocks
+       ? std::optional(
+         start_buffer->block_len * start_buffer->max_blocks.value())
+       : std::nullopt);
     if (len == 0) {
       if (start_buffer != iter_params->rbegin()) {
         --start_buffer;
+        // assert(start_buffer->max_blocks);
         start_buffer->buffer_capacity =
-          start_buffer->max_blocks * start_buffer->block_len;
+          start_buffer->max_blocks.value() * start_buffer->block_len;
         start_buffer->fully_in_array = false;
         break;
       } else {
@@ -708,14 +717,16 @@ Reader::init_traversal_partitions(
         prev_buffer->buffer_capacity = 0;
       }
     }
-    if (len < full_len)
+    if (!full_len || len < full_len.value())
       break;
+    array_length *= full_len.value();
     ++start_buffer;
   }
   if (start_buffer == iter_params->rend()) {
     --start_buffer;
+    // assert(start_buffer->max_blocks);
     start_buffer->buffer_capacity =
-      start_buffer->max_blocks * start_buffer->block_len;
+      start_buffer->max_blocks.value() * start_buffer->block_len;
     start_buffer->fully_in_array = false;
   }
 
@@ -772,9 +783,10 @@ Reader::init_traversal_partitions(
         ooo = ooo || out_of_order.count(ip->axis) > 0;
         if ((ooo
              && !(ip->fully_in_array
-                  || (ip->buffer_capacity >=
-                      ip->block_len * (ip->max_blocks - 1)
-                      + ip->max_terminal_block_len)))
+                  || (ip->max_blocks
+                      && (ip->buffer_capacity >=
+                          ip->block_len * (ip->max_blocks.value() - 1)
+                          + ip->max_terminal_block_len))))
             || !std::get<1>(tail_buffer_blocks(*ip)))
           *inner_fileview_axis = ip->axis;
       }
@@ -828,13 +840,15 @@ Reader::init_buffer_datatype(
     std::begin(reordered_ips),
     std::end(reordered_ips),
     [&](auto& ip) {
+      auto true_length = ip->true_length();
       if (ip->fully_in_array) {
         buffer.emplace_back(
           static_cast<unsigned>(ip->axis),
-          ip->true_length());
+          true_length.value());
       } else if (ip->buffer_capacity > 0) {
         buffer_capacity = ip->buffer_capacity;
-        tail_buffer_capacity = ip->true_length() % ip->buffer_capacity;
+        tail_buffer_capacity = (
+          true_length ? (true_length.value() % ip->buffer_capacity) : 0);
         std::size_t capacity =
           tail_array ? tail_buffer_capacity : buffer_capacity;
         buffer.emplace_back(static_cast<unsigned>(ip->axis), capacity);
@@ -860,10 +874,11 @@ Reader::init_buffer_datatype(
     [&](auto& ax) {
       auto ip = find_iter_params(iter_params, ax.id());
       if (ip->fully_in_array || ip->buffer_capacity > 1) {
-        auto count = ip->fully_in_array ? ip->true_length() : buffer_capacity;
-        auto i0 = buffer_indexer->offset_of_(index);
+        auto count =
+          ip->fully_in_array ? ip->true_length().value() : buffer_capacity;
+        auto i0 = buffer_indexer->offset_of_(index).value();
         ++index[ip->axis];
-        auto i1 = buffer_indexer->offset_of_(index);
+        auto i1 = buffer_indexer->offset_of_(index).value();
         --index[ip->axis];
         if (debug_log) {
           std::clog << "(" << rank << ") "
@@ -1101,7 +1116,7 @@ void
 Reader::set_fileview(TraversalState& traversal_state, MPI_File file) const {
   // assume that m_mtx and m_mpi_state.handles() are locked
   std::size_t offset =
-    m_ms_indexer->offset_of_(traversal_state.data_index);
+    m_ms_indexer->offset_of_(traversal_state.data_index).value();
 
   if (m_debug_log) {
     std::ostringstream oss;
@@ -1299,8 +1314,10 @@ Reader::advance_to_next_buffer(
         traversal_state.max_count =
           static_cast<int>(axis_iter.params->buffer_capacity);
         auto nr = axis_iter.num_remaining();
-        if (nr < static_cast<std::size_t>(traversal_state.max_count)) {
-          traversal_state.count = nr;
+        if (nr
+            && (nr.value()
+                < static_cast<std::size_t>(traversal_state.max_count))) {
+          traversal_state.count = nr.value();
           traversal_state.in_tail = true;
         } else {
           traversal_state.count = traversal_state.max_count;
