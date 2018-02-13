@@ -8,6 +8,7 @@ using namespace mpims;
 Writer
 Writer::begin(
   const std::string& path,
+  const std::string& datarep,
   ::MPI_Comm comm,
   ::MPI_Info info,
   const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
@@ -27,6 +28,7 @@ Writer::begin(
   return Writer(
     Reader::wbegin(
       path,
+      datarep,
       comm,
       info,
       ms_shape,

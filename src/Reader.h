@@ -173,6 +173,7 @@ public:
 
   Reader(
     MPIState&& mpi_state,
+    const std::string& datarep,
     std::shared_ptr<const std::vector<ColumnAxisBase<MSColumns> > > ms_shape,
     std::shared_ptr<const std::vector<IterParams> > iter_params,
     std::shared_ptr<const std::vector<MSColumns> > buffer_order,
@@ -185,6 +186,7 @@ public:
 
   Reader(const Reader& other)
     : m_mpi_state(other.m_mpi_state)
+    , m_datarep(other.m_datarep)
     , m_ms_shape(other.m_ms_shape)
     , m_iter_params(other.m_iter_params)
     , m_buffer_order(other.m_buffer_order)
@@ -203,6 +205,7 @@ public:
 
   Reader(Reader&& other)
     : m_mpi_state(std::move(other).m_mpi_state)
+    , m_datarep(std::move(other).m_datarep)
     , m_ms_shape(std::move(other).m_ms_shape)
     , m_iter_params(std::move(other).m_iter_params)
     , m_buffer_order(std::move(other).m_buffer_order)
@@ -233,6 +236,7 @@ public:
   operator=(Reader&& other) {
     std::lock_guard<decltype(m_mtx)> lock(m_mtx);
     m_mpi_state = std::move(other).m_mpi_state;
+    m_datarep = std::move(other).m_datarep;
     m_ms_shape = std::move(other).m_ms_shape;
     m_rank = std::move(other).m_rank;
     m_buffer_size = std::move(other).m_buffer_size;
@@ -362,6 +366,7 @@ public:
   static Reader
   begin(
     const std::string& path,
+    const std::string& datarep,
     ::MPI_Comm comm,
     ::MPI_Info info,
     const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
@@ -469,6 +474,7 @@ protected:
   static Reader
   wbegin(
     const std::string& path,
+    const std::string& datarep,
     ::MPI_Comm comm,
     ::MPI_Info info,
     const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
@@ -638,6 +644,8 @@ protected:
 private:
 
   MPIState m_mpi_state;
+
+  std::string m_datarep;
 
   std::shared_ptr<const std::vector<ColumnAxisBase<MSColumns> > > m_ms_shape;
 

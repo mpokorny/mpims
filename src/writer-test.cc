@@ -330,6 +330,7 @@ main(int argc, char* argv[]) {
           auto writer =
             Writer::begin(
               path,
+              "external32",
               MPI_COMM_WORLD,
               MPI_INFO_NULL,
               ms_shape,
@@ -351,6 +352,7 @@ main(int argc, char* argv[]) {
           auto reader =
             Reader::begin(
               path,
+              "external32",
               MPI_COMM_SELF,
               MPI_INFO_NULL,
               ms_shape,

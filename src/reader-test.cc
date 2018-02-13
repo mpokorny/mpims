@@ -288,6 +288,7 @@ main(int argc, char* argv[]) {
         auto reader =
           Reader::begin(
             argv[1],
+            "native",
             MPI_COMM_WORLD,
             MPI_INFO_NULL,
             ms_shape,

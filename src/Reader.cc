@@ -28,6 +28,7 @@ Reader::Reader()
 
 Reader::Reader(
   MPIState&& mpi_state,
+  const std::string& datarep,
   std::shared_ptr<const std::vector<ColumnAxisBase<MSColumns> > > ms_shape,
   std::shared_ptr<const std::vector<IterParams> > iter_params,
   std::shared_ptr<const std::vector<MSColumns> > buffer_order,
@@ -38,6 +39,7 @@ Reader::Reader(
   TraversalState&& traversal_state,
   bool debug_log)
   : m_mpi_state(std::move(mpi_state))
+  , m_datarep(datarep)
   , m_ms_shape(ms_shape)
   , m_iter_params(iter_params)
   , m_buffer_order(buffer_order)
@@ -89,6 +91,7 @@ Reader::~Reader() {
 Reader
 Reader::begin(
   const std::string& path,
+  const std::string& datarep,
   ::MPI_Comm comm,
   ::MPI_Info info,
   const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
@@ -133,6 +136,7 @@ Reader::begin(
   return
     Reader(
       MPIState(reduced_comm, priv_info, file, path),
+      datarep,
       std::make_shared<std::vector<ColumnAxisBase<MSColumns> > >(ms_shape),
       iter_params,
       buffer_order,
@@ -147,6 +151,7 @@ Reader::begin(
 Reader
 Reader::wbegin(
   const std::string& path,
+  const std::string& datarep,
   ::MPI_Comm comm,
   ::MPI_Info info,
   const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
@@ -203,6 +208,7 @@ Reader::wbegin(
   return
     Reader(
       MPIState(reduced_comm, priv_info, file, path),
+      datarep,
       std::make_shared<std::vector<ColumnAxisBase<MSColumns> > >(ms_shape),
       iter_params,
       buffer_order,
@@ -554,6 +560,7 @@ Reader::swap(Reader& other) {
   std::lock_guard<decltype(other.m_mtx)> lock2(other.m_mtx);
   swap(m_ms_shape, other.m_ms_shape);
   swap(m_mpi_state, other.m_mpi_state);
+  swap(m_datarep, other.m_datarep);
   swap(m_rank, other.m_rank);
   swap(m_buffer_size, other.m_buffer_size);
   swap(m_readahead, other.m_readahead);
@@ -1154,7 +1161,7 @@ Reader::set_fileview(TraversalState& traversal_state, ::MPI_File file) const {
     offset * sizeof(std::complex<float>),
     MPI_CXX_FLOAT_COMPLEX,
     dt,
-    "native",
+    m_datarep.c_str(),
     MPI_INFO_NULL);
 }
 
