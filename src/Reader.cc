@@ -51,9 +51,6 @@ Reader::Reader(
   , m_debug_log(debug_log)
   , m_traversal_state(std::move(traversal_state)) {
 
-  auto handles = m_mpi_state.handles();
-  mpi_call(::MPI_Comm_rank, handles->comm, reinterpret_cast<int*>(&m_rank));
-
   m_ms_array = std::make_tuple(
     MSArray(),
     std::variant<::MPI_Request, ::MPI_Status>(std::in_place_index<1>),
@@ -63,6 +60,12 @@ Reader::Reader(
     MSArray(),
     std::variant<::MPI_Request, ::MPI_Status>(std::in_place_index<1>),
     0);
+
+  auto handles = m_mpi_state.handles();
+  if (handles->comm == MPI_COMM_NULL)
+    return;
+
+  mpi_call(::MPI_Comm_rank, handles->comm, reinterpret_cast<int*>(&m_rank));
 
   if (handles->file != MPI_FILE_NULL) {
     if (!*m_inner_fileview_axis)
@@ -428,6 +431,16 @@ Reader::initialize(
         std::clog << "No ROMIO filesystem type" << std::endl;
       mpi_call(::MPI_Info_free, &info_used);
     }
+    // set the view here in order to associate a data representation with the
+    // file handle
+    mpi_call(
+      ::MPI_File_set_view,
+      file,
+      0,
+      MPI_CXX_FLOAT_COMPLEX,
+      MPI_CXX_FLOAT_COMPLEX,
+      datarep.c_str(),
+      MPI_INFO_NULL);
   }
 
   std::shared_ptr<::MPI_Datatype> full_fileview_datatype =
@@ -910,6 +923,9 @@ Reader::init_fileview(
   bool tail_fileview,
   int rank,
   bool debug_log) {
+
+  if (file == MPI_FILE_NULL)
+    return std::unique_ptr<::MPI_Datatype, DatatypeDeleter>();
 
   bool needs_tail = false;
   ArrayIndexer<MSColumns>::index index;
