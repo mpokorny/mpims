@@ -287,8 +287,10 @@ main(int argc, char* argv[]) {
     for (auto& bs : buffer_sizes) {
       for (auto& tvo : ms_axis_orders) {
         ostringstream output;
-        output << "========= ms axis order "
+        output << "========= ms order "
                << colnames(msao)
+               << "; traversal order "
+               << colnames(tvo)
                << "; write buffer_size "
                << num_elements(bs)
                << " ========="
