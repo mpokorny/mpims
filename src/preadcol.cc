@@ -173,6 +173,7 @@ parse_options(
   std::unordered_map<MSColumns, DataDistribution>& pgrid,
   std::size_t& buffer_size,
   std::string& ms_path,
+  std::string& datarep,
   bool& ms_buffer_order,
   bool& readahead,
   bool& debug_log) {
@@ -186,6 +187,7 @@ parse_options(
     {"transpose", no_argument, nullptr, 't'},
     {"no-transpose", no_argument, nullptr, -'t'},
     {"readahead", no_argument, nullptr, 'r'},
+    {"datarep", required_argument, &opt, 'd'},
     {"verbose", no_argument, nullptr, 'v'},
     {"help", optional_argument, nullptr, 'h'}
   };
@@ -199,6 +201,7 @@ parse_options(
         << "  [((--transpose | -t) | --no-transpose)]" << std::endl
         << "  [(--readahead | -r)]" << std::endl
         << "  [(--verbose | -v)]" << std::endl
+        << "  [(--datarep | -d) <datarep>]" << std::endl
         << "  <ms-data-column-file>" << std::endl;
 
   ms_buffer_order = true;
@@ -206,10 +209,11 @@ parse_options(
   readahead = false;
   bool got_shape = false, got_order = false, got_buffer = false;
   ms_path = "";
+  datarep = "native";
 
   while (1) {
     opt = 0;
-    int c = getopt_long(argc, argv, "s:o:g::b:trvh", long_options, nullptr);
+    int c = getopt_long(argc, argv, "s:o:g::b:trvhd::", long_options, nullptr);
 
     if (c == -1) {
       ms_path = argv[optind];
@@ -264,6 +268,10 @@ parse_options(
           return false;
         }
         break;
+
+      case 'd':
+        datarep = val;
+        break;
       };
       break;
     }
@@ -306,6 +314,7 @@ read_all(
   std::unordered_map<MSColumns, DataDistribution>& pgrid,
   std::size_t buffer_size,
   std::string ms_path,
+  std::string datarep,
   bool ms_buffer_order,
   bool readahead,
   bool debug_log) {
@@ -316,7 +325,7 @@ read_all(
     auto reader =
       Reader::begin(
         ms_path,
-        "native", // FIXME
+        datarep,
         MPI_COMM_WORLD,
         MPI_INFO_NULL,
         ms_shape,
@@ -402,6 +411,7 @@ main(int argc, char *argv[]) {
   std::string ms_path;
   bool ms_buffer_order;
   bool readahead;
+  std::string datarep;
   bool debug_log;
 
   bool options_ok =
@@ -415,6 +425,7 @@ main(int argc, char *argv[]) {
       pgrid,
       max_buffer_size,
       ms_path,
+      datarep,
       ms_buffer_order,
       readahead,
       debug_log);
@@ -436,6 +447,7 @@ main(int argc, char *argv[]) {
               pgrid,
               max_buffer_size,
               ms_path,
+              datarep,
               ms_buffer_order,
               readahead,
               debug_log);

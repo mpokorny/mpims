@@ -173,6 +173,7 @@ parse_options(
   std::unordered_map<MSColumns, DataDistribution>& pgrid,
   std::size_t& buffer_size,
   std::string& ms_path,
+  std::string& datarep,
   bool& readahead,
   bool& debug_log) {
 
@@ -183,6 +184,7 @@ parse_options(
     {"grid", required_argument, &opt, 'g'},
     {"buffer", required_argument, &opt, 'b'},
     // {"readahead", no_argument, nullptr, 'r'},
+    {"datarep", required_argument, &opt, 'd'},
     {"verbose", no_argument, nullptr, 'v'},
     {"help", optional_argument, nullptr, 'h'}
   };
@@ -195,16 +197,18 @@ parse_options(
         << "  [(--grid |-g) <distribution>]" << std::endl
         // << "  [(--readahead | -r)]" << std::endl
         << "  [(--verbose | -v)]" << std::endl
+        << "  [(--datarep | -d) <datarep>]" << std::endl
         << "  <ms-data-column-file>" << std::endl;
 
   debug_log = false;
   readahead = false;
   bool got_shape = false, got_order = false, got_buffer = false;
   ms_path = "";
+  datarep = "native";
 
   while (1) {
     opt = 0;
-    int c = getopt_long(argc, argv, "s:o:g::b:trvh", long_options, nullptr);
+    int c = getopt_long(argc, argv, "s:o:g::b:trvhd::", long_options, nullptr);
 
     if (c == -1) {
       ms_path = argv[optind];
@@ -259,6 +263,10 @@ parse_options(
           return false;
         }
         break;
+
+      case 'd':
+        datarep = val;
+        break;
       };
       break;
     }
@@ -305,6 +313,7 @@ write_all(
   std::unordered_map<MSColumns, DataDistribution>& pgrid,
   std::size_t buffer_size,
   std::string ms_path,
+  std::string datarep,
   // bool readahead,
   bool debug_log) {
 
@@ -314,7 +323,7 @@ write_all(
     auto writer =
       Writer::begin(
         ms_path,
-        "native", // FIXME
+        datarep,
         MPI_COMM_WORLD,
         MPI_INFO_NULL,
         ms_shape,
@@ -402,6 +411,7 @@ main(int argc, char *argv[]) {
   std::unordered_map<MSColumns, DataDistribution> pgrid;
   std::size_t max_buffer_size;
   std::string ms_path;
+  std::string datarep;
   bool readahead;
   bool debug_log;
 
@@ -416,6 +426,7 @@ main(int argc, char *argv[]) {
       pgrid,
       max_buffer_size,
       ms_path,
+      datarep,
       readahead,
       debug_log);
 
@@ -436,6 +447,7 @@ main(int argc, char *argv[]) {
               pgrid,
               max_buffer_size,
               ms_path,
+              datarep,
               // readahead,
               debug_log);
           mpi_call(::MPI_Barrier, MPI_COMM_WORLD);
