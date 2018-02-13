@@ -114,6 +114,7 @@ Reader::begin(
 
   initialize(
     path,
+    datarep,
     comm,
     info,
     ms_shape,
@@ -174,6 +175,7 @@ Reader::wbegin(
 
   initialize(
     path,
+    datarep,
     comm,
     info,
     ms_shape,
@@ -223,6 +225,7 @@ Reader::wbegin(
 void
 Reader::initialize(
   const std::string& path,
+  const std::string& datarep,
   ::MPI_Comm comm,
   ::MPI_Info info,
   const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
