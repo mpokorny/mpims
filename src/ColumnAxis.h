@@ -11,6 +11,16 @@ template <typename Columns>
 class ColumnAxisBase {
 public:
 
+  ColumnAxisBase(unsigned col, std::size_t length)
+    : m_col(col)
+    , m_length(length) {
+  }
+
+  ColumnAxisBase(unsigned col)
+    : m_col(col)
+    , m_length(std::nullopt) {
+  }
+
   Columns
   id() const {
     return static_cast<Columns>(m_col);
@@ -19,11 +29,6 @@ public:
   std::optional<std::size_t>
   length() const {
     return m_length;
-  }
-
-  ColumnAxisBase(unsigned col, std::size_t length)
-    : m_col(col)
-    , m_length(length) {
   }
 
   bool
@@ -45,9 +50,7 @@ class ColumnAxis
 public:
 
   ColumnAxis()
-    : ColumnAxisBase<Columns>(
-      static_cast<unsigned>(Column),
-      std::optional<std::size_t>()) {
+    : ColumnAxisBase<Columns>(static_cast<unsigned>(Column)) {
   }
 
   ColumnAxis(std::size_t length)

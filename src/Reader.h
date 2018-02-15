@@ -142,7 +142,7 @@ public:
     std::vector<IndexBlockSequence<MSColumns> >
     blocks() const {
       std::vector<IndexBlockSequence<MSColumns> > result;
-      if (count > 0) {
+      if (count > 0 && !eof) {
         for (std::size_t i = 0; i < iter_params->size(); ++i) {
           auto& ip = (*iter_params)[i];
           if (!ip.fully_in_array && ip.buffer_capacity == 0) {
@@ -308,9 +308,10 @@ public:
       : params(params_)
       , index(params_->origin)
       , block(0)
-      , at_data(params_->max_blocks > 0 && outer_at_data_)
+      , at_data((!params_->max_blocks || params_->max_blocks.value() > 0)
+                && outer_at_data_)
       , outer_at_data(outer_at_data_)
-      , at_end(params_->max_blocks == 0) {
+      , at_end(params_->max_blocks && params_->max_blocks.value() == 0) {
     }
 
     bool

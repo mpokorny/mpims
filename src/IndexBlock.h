@@ -3,6 +3,7 @@
 #define INDEX_BLOCK_SEQUENCE_H_
 
 #include <algorithm>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -11,15 +12,25 @@ namespace mpims {
 struct IndexBlock {
 	IndexBlock(std::size_t index, std::size_t length)
 		: m_index(index)
-		, m_length(length) {
+		, m_length(length)
+    , m_stride(std::nullopt) {
+	}
+
+	IndexBlock(std::size_t index, std::size_t length, std::size_t stride)
+		: m_index(index)
+		, m_length(length)
+    , m_stride(stride) {
 	}
 
 	std::size_t m_index;
 	std::size_t m_length;
+  std::optional<std::size_t> m_stride; // present for unbounded sequences only
 
   bool
   operator==(const IndexBlock& other) const {
-    return m_index == other.m_index && m_length == other.m_length;
+    return m_index == other.m_index
+      && m_length == other.m_length
+      && m_stride == other.m_stride;
   }
 
   bool
@@ -63,14 +74,18 @@ struct IndexBlockSequence {
       std::end(m_blocks));
   }
 
-  std::size_t
+  std::tuple<std::size_t, bool>
   num_elements() const {
-    std::size_t result = 0;
+    std::size_t ne = 0;
+    bool unbounded = false;
     std::for_each(
       std::begin(m_blocks),
       std::end(m_blocks),
-      [&result](const IndexBlock& ib) { result += ib.m_length; });
-    return result;
+      [&ne,&unbounded](const IndexBlock& ib) {
+        ne += ib.m_length;
+        unbounded = unbounded || ib.m_stride;
+      });
+    return std::make_tuple(ne, unbounded);
   }
 };
 
@@ -93,7 +108,15 @@ struct IndexBlockSequenceMap {
 
   IndexBlockSequence<Axes>
   operator[](std::size_t index) const {
-    return IndexBlockSequence(m_axis, m_sequences.at(index));
+    auto ibs = std::get<1>(*std::begin(m_sequences))[0];
+    std::size_t stride = ibs.m_stride.value_or(index + 1);
+    std::size_t offset = (index / stride) * stride;
+    auto result = IndexBlockSequence(m_axis, m_sequences.at(index % stride));
+    std::for_each(
+      std::begin(result.m_blocks),
+      std::end(result.m_blocks),
+      [&offset](auto& blk) { blk.m_index += offset; });
+    return result;
   }
 
   bool

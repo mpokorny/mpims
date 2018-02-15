@@ -58,7 +58,7 @@ Reader::Reader(
     const IterParams* init_params = &(*m_iter_params)[0];
     m_traversal_state.axis_iters.emplace(
       std::shared_ptr<const IterParams>(m_iter_params, init_params),
-      init_params->max_blocks > 0);
+      !init_params->max_blocks || init_params->max_blocks > 0);
     m_ms_array =
       read_next_buffer(m_traversal_state, m_readahead, handles->file);
     if (m_readahead)
@@ -525,7 +525,7 @@ Reader::buffer_length() const {
     std::begin(indices),
     std::end(indices),
     [&result](auto& ibs) {
-      result *= ibs.num_elements();
+      result *= std::get<0>(ibs.num_elements());
     });
   return result;
 }
@@ -1133,24 +1133,46 @@ Reader::make_index_block_sequences(
     [&result](const IterParams& ip) {
       std::vector<std::vector<IndexBlock> > blocks;
       if (ip.fully_in_array || ip.buffer_capacity > 0) {
-        // merge gap-less consecutive blocks
+        auto true_length = ip.true_length();
         std::vector<IndexBlock> merged_blocks;
-        std::size_t start = ip.origin;
-        std::size_t end = ip.origin + ip.block_len;
-        for (std::size_t b = 1; b < ip.max_blocks; ++b) {
-          std::size_t s = ip.origin + b * ip.stride;
-          if (s > end) {
-            merged_blocks.emplace_back(start, end - start);
-            start = s;
+        if (true_length) {
+          // merge contiguous blocks
+          std::size_t start = ip.origin;
+          std::size_t end = ip.origin + ip.block_len;
+          for (std::size_t b = 1; b < ip.max_blocks.value(); ++b) {
+            std::size_t s = ip.origin + b * ip.stride;
+            if (s > end) {
+              merged_blocks.emplace_back(start, end - start);
+              start = s;
+            }
+            end = s + ip.block_len;
           }
-          end = s + ip.block_len;
+          end -= ip.block_len - ip.terminal_block_len;
+          merged_blocks.emplace_back(start, end - start);
+        } else {
+          // create enough blocks to fit buffer_capacity, merging contiguous
+          // blocks
+          assert(ip.buffer_capacity % ip.block_len == 0);
+          auto nb = ip.buffer_capacity / ip.block_len;
+          auto stride = nb * ip.stride;
+          std::size_t start = ip.origin;
+          std::size_t end = ip.origin + ip.stride;
+          for (std::size_t b = 1; b < nb; ++b) {
+            std::size_t s = start + b * ip.stride;
+            if (s > end) {
+              merged_blocks.emplace_back(start, end - start, stride);
+              start = s;
+            }
+            end = s + ip.block_len;
+          }
+          merged_blocks.emplace_back(start, end - start, stride);
         }
-        end = end - ip.block_len + ip.terminal_block_len;
-        merged_blocks.emplace_back(start, end - start);
 
         // when entire axis doesn't fit into the array, we might have to split
         // blocks
-        if (!ip.fully_in_array && ip.true_length() > ip.buffer_capacity) {
+        if (!ip.fully_in_array
+            && (true_length
+                && ip.true_length().value() > ip.buffer_capacity)) {
           std::size_t rem = ip.buffer_capacity;
           std::vector<IndexBlock> ibs;
           std::for_each(
