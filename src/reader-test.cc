@@ -65,7 +65,7 @@ decode_vis(
 
 bool
 checkit(
-  const shared_ptr<complex<float> >& buffer,
+  const complex<float>* buffer,
   size_t& n,
   vector<pair<MSColumns, size_t> >& coords,
   vector<IndexBlockSequence<MSColumns> >::const_iterator begin,
@@ -75,7 +75,7 @@ checkit(
 
 bool
 checkit(
-  const shared_ptr<const complex<float> >& buffer,
+  const complex<float>* buffer,
   size_t& n,
   vector<pair<MSColumns, size_t> >& coords,
   vector<IndexBlockSequence<MSColumns> >::const_iterator begin,
@@ -99,7 +99,7 @@ checkit(
         unordered_map<MSColumns, size_t> coords_map(
           std::begin(coords), std::end(coords));
         size_t tim, spw, bal, ch, pol;
-        decode_vis(buffer.get()[n++], tim, spw, bal, ch, pol);
+        decode_vis(buffer[n++], tim, spw, bal, ch, pol);
         if (coords_map[MSColumns::time] != tim
             || coords_map[MSColumns::spectral_window] != spw
             || coords_map[MSColumns::baseline] != bal
@@ -134,10 +134,11 @@ checkit(
 }
 
 bool
-cb(
-  const vector<IndexBlockSequence<MSColumns> >& indexes,
-  const shared_ptr<const complex<float> >& buffer,
-  ostringstream& output) {
+cb(const MSArray& array, ostringstream& output) {
+
+  if (!array.buffer())
+    return false;
+  auto indexes = array.blocks();
 
   output << "next buffer..." << endl;
   for (auto& seq : indexes) {
@@ -152,7 +153,14 @@ cb(
 
   size_t n = 0;
   vector<pair<MSColumns, size_t> > coords;
-  bool result = checkit(buffer, n, coords, begin(indexes), end(indexes), output);
+  bool result =
+    checkit(
+      array.buffer().value(),
+      n,
+      coords,
+      begin(indexes),
+      end(indexes),
+      output);
   if (result)
     output << "no errors" << endl;
   return result;
@@ -298,9 +306,9 @@ main(int argc, char* argv[]) {
             bs,
             false);
         while (reader != Reader::end()) {
-          auto array = *reader;
-          if (array) {
-            if (cb(reader.indices(), array, output))
+          const MSArray& array = *reader;
+          if (array.buffer()) {
+            if (cb(array, output))
               ++reader;
             else
               reader.interrupt();

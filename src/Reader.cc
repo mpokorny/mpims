@@ -18,15 +18,6 @@ using namespace mpims;
 
 Reader::Reader()
   : m_readahead(false) {
-  m_ms_array = std::make_tuple(
-    MSArray(),
-    std::variant<MPI_Request, MPI_Status>(std::in_place_index<1>),
-    0);
-
-  m_next_ms_array = std::make_tuple(
-    MSArray(),
-    std::variant<MPI_Request, MPI_Status>(std::in_place_index<1>),
-    0);
 }
 
 Reader::Reader(
@@ -54,15 +45,6 @@ Reader::Reader(
   , m_debug_log(debug_log)
   , m_traversal_state(std::move(traversal_state)) {
 
-  m_ms_array = std::make_tuple(
-    MSArray(),
-    std::variant<MPI_Request, MPI_Status>(std::in_place_index<1>),
-    0);
-
-  m_next_ms_array = std::make_tuple(
-    MSArray(),
-    std::variant<MPI_Request, MPI_Status>(std::in_place_index<1>),
-    0);
 
   auto handles = m_mpi_state.handles();
   if (handles->comm == MPI_COMM_NULL)
@@ -89,8 +71,8 @@ Reader::Reader(
 
 Reader::~Reader() {
   if (m_readahead) {
-    wait_for_array(m_ms_array, true);
-    wait_for_array(m_next_ms_array, true);
+    m_ms_array.wait(true);
+    m_next_ms_array.wait(true);
   }
 }
 
@@ -476,7 +458,7 @@ Reader::step(bool cont) {
     throw std::out_of_range("Reader cannot be advanced: at end");
 
   if (m_readahead) {
-    wait_for_array(m_ms_array, !cont);
+    m_ms_array.wait(!cont);
     m_traversal_state = std::move(m_next_traversal_state);
     std::swap(m_ms_array, m_next_ms_array);
     if (at_end())
@@ -497,7 +479,8 @@ Reader::start_next() {
   m_next_traversal_state = m_traversal_state;
   advance_to_buffer_end(m_next_traversal_state);
 
-  m_next_traversal_state.eof = m_next_traversal_state.axis_iters.empty();
+  m_next_traversal_state.eof =
+    m_next_traversal_state.axis_iters.empty() || !m_ms_array.buffer();
   std::array<bool, 2>
     tests{ m_next_traversal_state.cont, m_next_traversal_state.eof };
   auto handles = m_mpi_state.handles();
@@ -518,15 +501,11 @@ Reader::start_next() {
     // with readahead fails in such a way that it appears that the same buffers
     // are returned for some consecutive reads, but there is no failure when the
     // number of ranks is "high enough"
-    wait_for_array(m_ms_array);
+    m_ms_array.wait();
     m_next_ms_array =
       read_next_buffer(m_next_traversal_state, m_readahead, handles->file);
   } else {
-    m_next_ms_array =
-      std::make_tuple(
-        MSArray(),
-        std::variant<MPI_Request,MPI_Status>(std::in_place_index<1>),
-        0);
+    m_next_ms_array = MSArray();
   }
 }
 
@@ -1203,14 +1182,11 @@ Reader::make_index_block_sequences(
   return result;
 }
 
-std::tuple<
-  std::unique_ptr<std::complex<float> >,
-  std::variant<MPI_Request, MPI_Status>,
-  MPI_Offset>
+MSArray
 Reader::read_arrays(
   TraversalState& traversal_state,
   bool nonblocking,
-  const std::vector<IndexBlockSequence<MSColumns> >& blocks,
+  std::vector<IndexBlockSequence<MSColumns> >& blocks,
   MPI_File file) const {
   // assume that m_mtx and m_mpi_state.handles() are locked
 
@@ -1253,47 +1229,29 @@ Reader::read_arrays(
   MPI_File_get_position(file, &start);
 
   if (!nonblocking) {
-    std::tuple<
-      std::unique_ptr<std::complex<float> >,
-      std::variant<MPI_Request, MPI_Status>,
-      MPI_Offset> result(
-        std::move(buffer),
-        std::variant<MPI_Request, MPI_Status>(std::in_place_index<1>),
-        start);
-    MPI_File_read_all(
-      file,
-      std::get<0>(result).get(),
+    MPI_Status status;
+    MPI_File_read_all(file, buffer.get(), count, *dt, &status);
+    MSArray result(
+      std::move(blocks),
+      std::move(buffer),
+      start,
       count,
-      *dt,
-      &std::get<MPI_Status>(std::get<1>(result)));
-
-    // TODO: move this block
-    int st_count;
-    MPI_Get_count(&std::get<MPI_Status>(std::get<1>(result)), *dt, &st_count);
-    if (count != static_cast<unsigned>(st_count)) {
-      buffer.reset();
-      if (m_debug_log)
-        std::clog << "(" << m_rank << ") "
-                  << "expected " << count
-                  << ", got " << st_count
-                  << std::endl;
-    }
+      dt,
+      std::move(status),
+      (m_debug_log ? std::optional<int>(m_rank) : std::nullopt));
+    result.test_status();
     return result;
   } else {
-    std::tuple<
-      std::unique_ptr<std::complex<float> >,
-      std::variant<MPI_Request, MPI_Status>,
-      MPI_Offset> result(
-        std::move(buffer),
-        std::variant<MPI_Request, MPI_Status>(std::in_place_index<0>),
-        start);
-    MPI_File_iread_all(
-      file,
-      std::get<0>(result).get(),
+    MPI_Request request;
+    MPI_File_iread_all, file, buffer.get(), count, *dt, &request);
+    return MSArray(
+      std::move(blocks),
+      std::move(buffer),
+      start,
       count,
-      *dt,
-      &std::get<MPI_Request>(std::get<1>(result)));
-    return result;
+      dt,
+      std::move(request),
+      (m_debug_log ? std::optional<int>(m_rank) : std::nullopt));
   }
 }
 
@@ -1327,8 +1285,8 @@ Reader::advance_to_next_buffer(
         traversal_state.in_tail = false;
       }
       if (*m_inner_fileview_axis && axis == m_inner_fileview_axis->value()) {
-        wait_for_array(m_ms_array);
-        wait_for_array(m_next_ms_array);
+        m_ms_array.wait();
+        m_next_ms_array.wait();
         set_fileview(traversal_state, file);
       }
       if (axis_iter.params->buffer_capacity > 0)
@@ -1369,7 +1327,7 @@ Reader::advance_to_buffer_end(TraversalState& traversal_state) const {
   }
 }
 
-std::tuple<MSArray, std::variant<MPI_Request, MPI_Status>, MPI_Offset>
+MSArray
 Reader::read_next_buffer(
   TraversalState& traversal_state,
   bool nonblocking,
@@ -1385,12 +1343,7 @@ Reader::read_next_buffer(
            const IndexBlockSequence<MSColumns>& ibs1) {
       return buffer_order_compare(ibs0.m_axis, ibs1.m_axis);
     });
-  std::shared_ptr<std::complex<float> > buffer;
-  std::variant<MPI_Request, MPI_Status> rs;
-  MPI_Offset start;
-  std::tie(buffer, rs, start) =
-    read_arrays(traversal_state, nonblocking, blocks, file);
-  return std::make_tuple(MSArray(std::move(blocks), buffer), rs, start);
+  return read_arrays(traversal_state, nonblocking, blocks, file);
 }
 
 bool

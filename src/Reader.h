@@ -13,7 +13,6 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include <mpims.h>
@@ -419,10 +418,7 @@ public:
       // and now the potentially really expensive test -- this is required by
       // semantics of an InputIterator
       && buffer_length() == other.buffer_length()
-      && memcmp(
-        getv().get(),
-        other.getv().get(),
-        sizeof(std::complex<float>) * buffer_length()) == 0);
+      && getv() == other.getv());
   }
 
   bool
@@ -458,8 +454,8 @@ public:
   const std::vector<IndexBlockSequence<MSColumns> >&
   indices() const {
     std::lock_guard<decltype(m_mtx)> lock(m_mtx);
-    wait_for_array(m_ms_array);
-    return std::get<0>(m_ms_array).blocks;
+    m_ms_array.wait();
+    return m_ms_array.blocks();
   };
 
   std::size_t
@@ -481,17 +477,15 @@ public:
     return result;
   }
 
-  // NB: the returned array can be empty! Caller should test for null.
-  const std::shared_ptr<const std::complex<float> >
+  // NB: the returned array can be empty!
+  const MSArray&
   operator*() const {
     return getv();
   }
 
-  std::unique_ptr<std::shared_ptr<const std::complex<float> > >
+  const MSArray*
   operator->() const {
-    std::unique_ptr<std::shared_ptr<const std::complex<float> > > result;
-    *result = getv();
-    return result;
+    return &getv();
   }
 
 protected:
@@ -539,11 +533,11 @@ protected:
   void
   start_next();
 
-  const std::shared_ptr<const std::complex<float> >
+  const MSArray&
   getv() const {
     std::lock_guard<decltype(m_mtx)> lock(m_mtx);
-    wait_for_array(m_ms_array);
-    return std::get<0>(m_ms_array).buffer;
+    m_ms_array.wait();
+    return m_ms_array;
   };
 
   static void
@@ -617,14 +611,11 @@ protected:
   make_index_block_sequences(
     const std::shared_ptr<const std::vector<IterParams> >& iter_params);
 
-  std::tuple<
-    std::unique_ptr<std::complex<float> >,
-    std::variant<MPI_Request, MPI_Status>,
-    MPI_Offset>
+  MSArray
   read_arrays(
     TraversalState& traversal_state,
     bool nonblocking,
-    const std::vector<IndexBlockSequence<MSColumns> >& blocks,
+    std::vector<IndexBlockSequence<MSColumns> >& blocks,
     MPI_File file) const;
 
   void
@@ -638,7 +629,7 @@ protected:
   void
   advance_to_buffer_end(TraversalState& traversal_state) const;
 
-  std::tuple<MSArray, std::variant<MPI_Request, MPI_Status>, MPI_Offset>
+  MSArray
   read_next_buffer(
     TraversalState& TraversalState,
     bool nonblocking,
@@ -664,34 +655,6 @@ protected:
     if (ip != std::end(*iter_params))
       return &*ip;
     return nullptr;
-  }
-
-  void
-  wait_for_array(
-    std::tuple<
-      MSArray,
-      std::variant<MPI_Request, MPI_Status>,
-      MPI_Offset>& array,
-    bool cancel=false)
-    const {
-
-    if (std::holds_alternative<MPI_Request>(std::get<1>(array))) {
-      if (cancel)
-        MPI_Cancel(&std::get<MPI_Request>(std::get<1>(m_ms_array)));
-
-      std::tuple<
-        MSArray,
-        std::variant<MPI_Request, MPI_Status>,
-        MPI_Offset> completion(
-          std::get<0>(array),
-          std::variant<MPI_Request, MPI_Status>(
-            std::in_place_index<1>),
-          std::get<2>(array));
-        MPI_Wait(
-          &std::get<MPI_Request>(std::get<1>(array)),
-          &std::get<MPI_Status>(std::get<1>(completion)));
-      array = std::move(completion);
-    }
   }
 
 private:
@@ -725,17 +688,9 @@ private:
 
   TraversalState m_next_traversal_state;
 
-  mutable std::tuple<
-    MSArray,
-    std::variant<MPI_Request, MPI_Status>,
-    MPI_Offset>
-  m_ms_array;
+  mutable MSArray m_ms_array;
 
-  mutable std::tuple<
-    MSArray,
-    std::variant<MPI_Request, MPI_Status>,
-    MPI_Offset>
-  m_next_ms_array;
+  mutable MSArray m_next_ms_array;
 
   mutable std::mutex m_mtx;
 };

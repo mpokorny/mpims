@@ -296,12 +296,15 @@ parse_options(
 
 void
 write_buffer(
-  std::complex<float>* buffer,
+  std::optional<std::complex<float>*> buffer,
   std::size_t buffer_length,
   std::complex<float>& val) {
 
+  if (!buffer)
+    return;
+  auto buff = buffer.value();
   while (buffer_length-- > 0) {
-    *buffer++ = val;
+    *buff++ = val;
     val += std::complex<float>(31.0, 17.0);
   }
 }
@@ -336,9 +339,9 @@ write_all(
     while (writer != Writer::end()) {
       auto buffer_length = writer.buffer_length();
       if (buffer_length > 0) {
-        std::unique_ptr<std::complex<float> > buffer = writer.allocate_buffer();
-        write_buffer(buffer.get(), buffer_length, val);
-        *writer = move(buffer);
+        MSArray array(buffer_length);
+        write_buffer(array.buffer(), buffer_length, val);
+        *writer = std::move(array);
       }
       ++writer;
     }

@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -66,7 +67,7 @@ decode_vis(
 
 bool
 checkit(
-  const shared_ptr<complex<float> >& buffer,
+  const complex<float>* buffer,
   size_t& n,
   vector<pair<MSColumns, size_t> >& coords,
   vector<IndexBlockSequence<MSColumns> >::const_iterator begin,
@@ -76,7 +77,7 @@ checkit(
 
 bool
 checkit(
-  const shared_ptr<const complex<float> >& buffer,
+  const complex<float>* buffer,
   size_t& n,
   vector<pair<MSColumns, size_t> >& coords,
   vector<IndexBlockSequence<MSColumns> >::const_iterator begin,
@@ -100,7 +101,7 @@ checkit(
         unordered_map<MSColumns, size_t> coords_map(
           std::begin(coords), std::end(coords));
         size_t tim, spw, bal, ch, pol;
-        decode_vis(buffer.get()[n++], tim, spw, bal, ch, pol);
+        decode_vis(buffer[n++], tim, spw, bal, ch, pol);
         if (coords_map[MSColumns::time] != tim
             || coords_map[MSColumns::spectral_window] != spw
             || coords_map[MSColumns::baseline] != bal
@@ -135,10 +136,11 @@ checkit(
 }
 
 bool
-cb(
-  const vector<IndexBlockSequence<MSColumns> >& indexes,
-  const shared_ptr<const complex<float> >& buffer,
-  ostringstream& output) {
+cb(const MSArray& array, ostringstream& output) {
+
+  if (!array.buffer())
+    return false;
+  auto indexes = array.blocks();
 
   output << "next buffer..." << endl;
   for (auto& seq : indexes) {
@@ -153,7 +155,14 @@ cb(
 
   size_t n = 0;
   vector<pair<MSColumns, size_t> > coords;
-  bool result = checkit(buffer, n, coords, begin(indexes), end(indexes), output);
+  bool result =
+    checkit(
+      array.buffer().value(),
+      n,
+      coords,
+      begin(indexes),
+      end(indexes),
+      output);
   if (result)
     output << "no errors" << endl;
   return result;
@@ -196,8 +205,13 @@ writeit(
 
 void
 write_buffer(
-  complex<float>* buffer,
+  optional<complex<float>*> buffer,
   const vector<IndexBlockSequence<MSColumns> >& ibs) {
+
+  if (!buffer)
+    return;
+
+  auto buff = buffer.value();
 
   stack<IndexBlockSequence<MSColumns> > index_blocks;
   std::for_each(
@@ -206,7 +220,7 @@ write_buffer(
     [&index_blocks](auto& ib) { index_blocks.push(ib); });
 
   unordered_map<MSColumns, size_t> indices;
-  writeit(&buffer, index_blocks, indices);
+  writeit(&buff, index_blocks, indices);
 }
 
 string
@@ -338,9 +352,9 @@ main(int argc, char* argv[]) {
               bs);
           while (writer != Writer::end()) {
             if (writer.buffer_length() > 0) {
-              unique_ptr<complex<float> > buffer = writer.allocate_buffer();
-              write_buffer(buffer.get(), writer.indices());
-              *writer = move(buffer);
+              MSArray array(writer.buffer_length());
+              write_buffer(array.buffer(), writer.indices());
+              *writer = move(array);
             }
             ++writer;
           }
@@ -361,9 +375,9 @@ main(int argc, char* argv[]) {
               max_buffer_size,
               false);
           while (reader != Reader::end()) {
-            auto array = *reader;
-            if (array) {
-              if (cb(reader.indices(), array, output))
+            auto& array = *reader;
+            if (array.buffer()) {
+              if (cb(array, output))
                 ++reader;
               else
                 reader.interrupt();

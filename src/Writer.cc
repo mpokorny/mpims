@@ -44,7 +44,7 @@ void
 Writer::swap(Writer& other) {
   using std::swap;
   swap(m_reader, other.m_reader);
-  swap(m_buffer, other.m_buffer);
+  swap(m_array, other.m_array);
 }
 
 void
@@ -75,19 +75,22 @@ Writer::next() {
       });
     std::clog << std::endl;
   }
-  if (m_buffer) {
-    MPI_Offset offset = std::abs(std::get<2>(m_reader.m_ms_array));
-    MPI_File_seek(handles->file, offset, MPI_SEEK_SET);
-  }
+  if (m_array)
+    MPI_File_seek(handles->file, m_array.value().offset(), MPI_SEEK_SET);
   MPI_Status status;
   std::shared_ptr<const MPI_Datatype> dt;
   unsigned count;
   std::tie(dt, count) = m_reader.m_traversal_state.buffer_datatype();
-  if (!m_buffer)
+  void *buff;
+  if (!m_array || !m_array.value().buffer()) {
     count = 0;
-  MPI_File_write_all(handles->file, m_buffer.get(), count, *dt, &status);
+    buff = nullptr;
+  } else {
+    buff = m_array.value().buffer().value();
+  }
+  MPI_File_write_all(handles->file, buff, count, *dt, &status);
   // TODO: check status
-  m_buffer.reset();
+  m_array = std::nullopt;
   m_reader.next();
 }
 

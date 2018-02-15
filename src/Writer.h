@@ -4,6 +4,7 @@
 
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include <mpi.h>
@@ -25,21 +26,13 @@ public:
   }
 
   Writer(const Writer& other)
-    : m_reader(other.m_reader) {
-
-    if (m_buffer) {
-      std::size_t buffer_size = buffer_length() * sizeof(std::complex<float>);
-      std::unique_ptr<std::complex<float> > new_buffer(
-        reinterpret_cast<std::complex<float> *>(::operator new(buffer_size)));
-      std::lock_guard<decltype(m_mtx)> lock(other.m_mtx);
-      memcpy(new_buffer.get(), other.m_buffer.get(), buffer_size);
-      m_buffer = std::move(new_buffer);
-    }
+    : m_reader(other.m_reader)
+    , m_array(other.m_array) {
   }
 
   Writer(Writer&& other)
     : m_reader(std::move(other).m_reader)
-    , m_buffer(std::move(other).m_buffer) {
+    , m_array(std::move(other).m_array) {
   }
 
   static Writer
@@ -61,7 +54,7 @@ public:
   operator=(Writer&& other) {
     std::lock_guard<decltype(m_mtx)> lock(m_mtx);
     m_reader = std::move(other).m_reader;
-    m_buffer = std::move(other).m_buffer;
+    m_array = std::move(other).m_array;
     return *this;
   }
 
@@ -85,10 +78,7 @@ public:
     return (
       buffer_length() == other.buffer_length()
       && m_reader == other.m_reader
-      && memcmp(
-        m_buffer.get(),
-        other.m_buffer.get(),
-        sizeof(std::complex<float>) * buffer_length()) == 0);
+      && m_array == other.m_array);
   }
 
   bool
@@ -127,16 +117,6 @@ public:
     return (size / sizeof(std::complex<float>)) * count;
   }
 
-  // this is purely a convenience method, it's not necessary for a client to use
-  // it to allocate a write buffer
-  std::unique_ptr<std::complex<float> >
-  allocate_buffer() const {
-    return
-      std::unique_ptr<std::complex<float> >(
-        reinterpret_cast<std::complex<float> *>(
-          ::operator new(sizeof(std::complex<float>) * buffer_length())));
-  }
-
   void
   swap(Writer& other);
 
@@ -145,22 +125,27 @@ public:
     return m_reader.num_ranks();
   }
 
-  // NB: the returned array can be empty! Caller should test for null.
-  const std::shared_ptr<const std::complex<float> >
+  // NB: the returned array can be empty!
+  const MSArray&
   operator*() const {
-    return getv();
+    std::lock_guard<decltype(m_mtx)> lock(m_mtx);
+    if (m_array)
+      return m_array.value();
+    else
+      return getv();
   }
 
-  std::unique_ptr<const std::complex<float> >&
+  MSArray&
   operator*() {
-    return m_buffer;
+    std::lock_guard<decltype(m_mtx)> lock(m_mtx);
+    if (!m_array)
+      m_array = MSArray();
+    return m_array.value();
   }
 
-  std::unique_ptr<std::shared_ptr<const std::complex<float> > >
-  operator->() const {
-    std::unique_ptr<std::shared_ptr<const std::complex<float> > > result;
-    *result = getv();
-    return result;
+  MSArray*
+  operator->() {
+    return &operator*();
   }
 
   static Writer
@@ -178,7 +163,7 @@ public:
 
 protected:
 
-  const std::shared_ptr<const std::complex<float> >
+  const MSArray&
   getv() const {
     std::lock_guard<decltype(m_mtx)> lock(m_mtx);
     return *m_reader;
@@ -186,7 +171,7 @@ protected:
 
   Reader m_reader;
 
-  std::unique_ptr<const std::complex<float> > m_buffer;
+  std::optional<MSArray> m_array;
 
   mutable std::recursive_mutex m_mtx;
 };
