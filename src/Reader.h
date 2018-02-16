@@ -47,15 +47,15 @@ public:
     }
 
     TraversalState(
-      ::MPI_Comm comm,
+      MPI_Comm comm,
       const std::shared_ptr<const std::vector<IterParams> >& iter_params_,
       MSColumns& outer_full_array_axis_,
-      const std::shared_ptr<const ::MPI_Datatype>& full_buffer_datatype,
+      const std::shared_ptr<const MPI_Datatype>& full_buffer_datatype,
       unsigned full_buffer_dt_count,
-      const std::shared_ptr<const ::MPI_Datatype>& tail_buffer_datatype,
+      const std::shared_ptr<const MPI_Datatype>& tail_buffer_datatype,
       unsigned tail_buffer_dt_count,
-      const std::shared_ptr<const ::MPI_Datatype>& full_fileview_datatype,
-      const std::shared_ptr<const ::MPI_Datatype>& tail_fileview_datatype)
+      const std::shared_ptr<const MPI_Datatype>& full_fileview_datatype,
+      const std::shared_ptr<const MPI_Datatype>& tail_fileview_datatype)
       : eof(comm == MPI_COMM_NULL)
       , cont(!eof)
       , iter_params(iter_params_)
@@ -93,7 +93,7 @@ public:
 
     MSColumns outer_full_array_axis;
 
-    std::tuple<std::shared_ptr<const ::MPI_Datatype>, unsigned>
+    std::tuple<std::shared_ptr<const MPI_Datatype>, unsigned>
     buffer_datatype() const {
       if (in_tail)
         return std::make_tuple(m_tail_buffer_datatype, m_tail_buffer_dt_count);
@@ -101,7 +101,7 @@ public:
         return std::make_tuple(m_full_buffer_datatype, m_full_buffer_dt_count);
     }
 
-    std::shared_ptr<const ::MPI_Datatype>
+    std::shared_ptr<const MPI_Datatype>
     fileview_datatype() const {
       return (in_tail ? m_tail_fileview_datatype : m_full_fileview_datatype);
     }
@@ -155,17 +155,17 @@ public:
 
   private:
 
-    std::shared_ptr<const ::MPI_Datatype> m_full_buffer_datatype;
+    std::shared_ptr<const MPI_Datatype> m_full_buffer_datatype;
 
     unsigned m_full_buffer_dt_count;
 
-    std::shared_ptr<const ::MPI_Datatype> m_tail_buffer_datatype;
+    std::shared_ptr<const MPI_Datatype> m_tail_buffer_datatype;
 
     unsigned m_tail_buffer_dt_count;
 
-    std::shared_ptr<const ::MPI_Datatype> m_full_fileview_datatype;
+    std::shared_ptr<const MPI_Datatype> m_full_fileview_datatype;
 
-    std::shared_ptr<const ::MPI_Datatype> m_tail_fileview_datatype;
+    std::shared_ptr<const MPI_Datatype> m_tail_fileview_datatype;
 
   };
 
@@ -367,8 +367,8 @@ public:
   begin(
     const std::string& path,
     const std::string& datarep,
-    ::MPI_Comm comm,
-    ::MPI_Info info,
+    MPI_Comm comm,
+    MPI_Info info,
     const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
     const std::vector<MSColumns>& traversal_order,
     bool ms_buffer_order,
@@ -414,7 +414,7 @@ public:
     auto handles = m_mpi_state.handles();
     std::lock_guard<MPIHandles> lck(*handles);
     if (handles->comm != MPI_COMM_NULL)
-      mpi_call(::MPI_Comm_size, handles->comm, reinterpret_cast<int*>(&result));
+      MPI_Comm_size(handles->comm, reinterpret_cast<int*>(&result));
     else
       result = 0;
     return result;
@@ -478,8 +478,8 @@ protected:
   wbegin(
     const std::string& path,
     const std::string& datarep,
-    ::MPI_Comm comm,
-    ::MPI_Info info,
+    MPI_Comm comm,
+    MPI_Info info,
     const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
     const std::vector<MSColumns>& traversal_order,
     bool ms_buffer_order,
@@ -492,8 +492,8 @@ protected:
   initialize(
     const std::string& path,
     const std::string& datarep,
-    ::MPI_Comm comm,
-    ::MPI_Info info,
+    MPI_Comm comm,
+    MPI_Info info,
     const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
     const std::vector<MSColumns>& traversal_order,
     bool ms_buffer_order,
@@ -501,9 +501,9 @@ protected:
     std::size_t max_buffer_size,
     bool debug_log,
     int amode,
-    ::MPI_Comm& reduced_comm,
-    ::MPI_Info& priv_info,
-    ::MPI_File& file,
+    MPI_Comm& reduced_comm,
+    MPI_Info& priv_info,
+    MPI_File& file,
     std::shared_ptr<std::vector<IterParams> >& iter_params,
     std::shared_ptr<std::vector<MSColumns> >& buffer_order,
     std::shared_ptr<std::optional<MSColumns> >& inner_fileview_axis,
@@ -542,7 +542,7 @@ protected:
     int rank,
     bool debug_log);
 
-  static std::tuple<std::unique_ptr<::MPI_Datatype, DatatypeDeleter>, unsigned>
+  static std::tuple<std::unique_ptr<MPI_Datatype, DatatypeDeleter>, unsigned>
     init_buffer_datatype(
       const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
       const std::shared_ptr<std::vector<IterParams> >& iter_params,
@@ -551,9 +551,9 @@ protected:
       int rank,
       bool debug_log);
 
-  static std::unique_ptr<::MPI_Datatype, DatatypeDeleter>
+  static std::unique_ptr<MPI_Datatype, DatatypeDeleter>
     init_fileview(
-      ::MPI_File file,
+      MPI_File file,
       const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
       const std::shared_ptr<std::vector<IterParams> >& iter_params,
       const std::shared_ptr<ArrayIndexer<MSColumns> >& ms_indexer,
@@ -567,32 +567,32 @@ protected:
 
   std::tuple<
     std::unique_ptr<std::complex<float> >,
-    std::variant<::MPI_Request, ::MPI_Status>,
-    ::MPI_Offset>
+    std::variant<MPI_Request, MPI_Status>,
+    MPI_Offset>
   read_arrays(
     TraversalState& traversal_state,
     bool nonblocking,
     const std::vector<IndexBlockSequence<MSColumns> >& blocks,
-    ::MPI_File file) const;
+    MPI_File file) const;
 
   void
-  set_fileview(TraversalState& traversal_state, ::MPI_File file) const;
+  set_fileview(TraversalState& traversal_state, MPI_File file) const;
 
   void
   advance_to_next_buffer(
     TraversalState& traversal_state,
-    ::MPI_File file) const;
+    MPI_File file) const;
 
   void
   advance_to_buffer_end(TraversalState& traversal_state) const;
 
-  std::tuple<MSArray, std::variant<::MPI_Request, ::MPI_Status>, ::MPI_Offset>
+  std::tuple<MSArray, std::variant<MPI_Request, MPI_Status>, MPI_Offset>
   read_next_buffer(
     TraversalState& TraversalState,
     bool nonblocking,
-    ::MPI_File file) const;
+    MPI_File file) const;
 
-  mutable std::shared_ptr<const ::MPI_Datatype> m_buffer_datatype;
+  mutable std::shared_ptr<const MPI_Datatype> m_buffer_datatype;
 
   bool
   buffer_order_compare(const MSColumns& col0, const MSColumns& col1) const;
@@ -618,29 +618,26 @@ protected:
   wait_for_array(
     std::tuple<
       MSArray,
-      std::variant<::MPI_Request, ::MPI_Status>,
-      ::MPI_Offset>& array,
+      std::variant<MPI_Request, MPI_Status>,
+      MPI_Offset>& array,
     bool cancel=false)
     const {
 
-    if (std::holds_alternative<::MPI_Request>(std::get<1>(array))) {
+    if (std::holds_alternative<MPI_Request>(std::get<1>(array))) {
       if (cancel)
-        mpi_call(
-          ::MPI_Cancel,
-          &std::get<::MPI_Request>(std::get<1>(m_ms_array)));
+        MPI_Cancel(&std::get<MPI_Request>(std::get<1>(m_ms_array)));
 
       std::tuple<
         MSArray,
-        std::variant<::MPI_Request, ::MPI_Status>,
-        ::MPI_Offset> completion(
+        std::variant<MPI_Request, MPI_Status>,
+        MPI_Offset> completion(
           std::get<0>(array),
-          std::variant<::MPI_Request, ::MPI_Status>(
+          std::variant<MPI_Request, MPI_Status>(
             std::in_place_index<1>),
           std::get<2>(array));
-      mpi_call(
-        ::MPI_Wait,
-        &std::get<::MPI_Request>(std::get<1>(array)),
-        &std::get<::MPI_Status>(std::get<1>(completion)));
+        MPI_Wait(
+          &std::get<MPI_Request>(std::get<1>(array)),
+          &std::get<MPI_Status>(std::get<1>(completion)));
       array = std::move(completion);
     }
   }
@@ -660,7 +657,7 @@ private:
 
   std::shared_ptr<const std::optional<MSColumns> > m_inner_fileview_axis;
 
-  std::shared_ptr<const ::MPI_Datatype> m_etype_datatype;
+  std::shared_ptr<const MPI_Datatype> m_etype_datatype;
 
   std::shared_ptr<const ArrayIndexer<MSColumns> > m_ms_indexer;
 
@@ -678,14 +675,14 @@ private:
 
   mutable std::tuple<
     MSArray,
-    std::variant<::MPI_Request, ::MPI_Status>,
-    ::MPI_Offset>
+    std::variant<MPI_Request, MPI_Status>,
+    MPI_Offset>
   m_ms_array;
 
   mutable std::tuple<
     MSArray,
-    std::variant<::MPI_Request, ::MPI_Status>,
-    ::MPI_Offset>
+    std::variant<MPI_Request, MPI_Status>,
+    MPI_Offset>
   m_next_ms_array;
 
   mutable std::mutex m_mtx;

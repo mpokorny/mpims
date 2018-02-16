@@ -226,8 +226,8 @@ main(int argc, char* argv[]) {
     return -1;
   }
 
-  ::MPI_Init(&argc, &argv);
-  ::MPI_Comm_set_errhandler(MPI_COMM_WORLD, MPI_ERRORS_RETURN);
+  MPI_Init(&argc, &argv);
+  set_throw_exception_errhandler(MPI_COMM_WORLD);
 
   vector<ColumnAxisBase<MSColumns> > ms_shape {
     ColumnAxis<MSColumns, MSColumns::time>(ntim),
@@ -268,9 +268,9 @@ main(int argc, char* argv[]) {
   };
 
   int my_rank;
-  mpi_call(::MPI_Comm_rank, MPI_COMM_WORLD, &my_rank);
+  MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
   int world_size;
-  mpi_call(::MPI_Comm_size, MPI_COMM_WORLD, &world_size);
+  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
   std::array<bool,2> ms_order{ false, true };
 
@@ -322,12 +322,12 @@ main(int argc, char* argv[]) {
             cout << output.str();
           }
           ++output_rank;
-          mpi_call(::MPI_Barrier, MPI_COMM_WORLD);
+          MPI_Barrier(MPI_COMM_WORLD);
         }
       }
     }
   }
-  ::MPI_Finalize();
+  MPI_Finalize();
 
 return 0;
 }

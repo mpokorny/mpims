@@ -113,14 +113,14 @@ public:
 
   std::size_t
   buffer_length() const {
-    std::shared_ptr<const ::MPI_Datatype> dt;
+    std::shared_ptr<const MPI_Datatype> dt;
     unsigned count;
-    ::MPI_Count size;
+    MPI_Count size;
     std::lock_guard<decltype(m_mtx)> lock(m_mtx);
     if (m_reader.m_traversal_state.count == 0)
       return 0;
     std::tie(dt, count) = m_reader.m_traversal_state.buffer_datatype();
-    mpi_call(::MPI_Type_size_x, *dt, &size);
+    MPI_Type_size_x(*dt, &size);
     assert(size % sizeof(std::complex<float>) == 0);
     return (size / sizeof(std::complex<float>)) * count;
   }
@@ -165,8 +165,8 @@ public:
   begin(
     const std::string& path,
     const std::string& datarep,
-    ::MPI_Comm comm,
-    ::MPI_Info info,
+    MPI_Comm comm,
+    MPI_Info info,
     const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
     const std::vector<MSColumns>& traversal_order,
     std::unordered_map<MSColumns, DataDistribution>& pgrid,

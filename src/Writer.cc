@@ -9,8 +9,8 @@ Writer
 Writer::begin(
   const std::string& path,
   const std::string& datarep,
-  ::MPI_Comm comm,
-  ::MPI_Info info,
+  MPI_Comm comm,
+  MPI_Info info,
   const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
   const std::vector<MSColumns>& traversal_order,
   std::unordered_map<MSColumns, DataDistribution>& pgrid,
@@ -76,22 +76,16 @@ Writer::next() {
     std::clog << std::endl;
   }
   if (m_buffer) {
-    ::MPI_Offset offset = std::abs(std::get<2>(m_reader.m_ms_array));
-    mpi_call(::MPI_File_seek, handles->file, offset, MPI_SEEK_SET);
+    MPI_Offset offset = std::abs(std::get<2>(m_reader.m_ms_array));
+    MPI_File_seek(handles->file, offset, MPI_SEEK_SET);
   }
-  ::MPI_Status status;
-  std::shared_ptr<const ::MPI_Datatype> dt;
+  MPI_Status status;
+  std::shared_ptr<const MPI_Datatype> dt;
   unsigned count;
   std::tie(dt, count) = m_reader.m_traversal_state.buffer_datatype();
   if (!m_buffer)
     count = 0;
-  mpi_call(
-    ::MPI_File_write_all,
-    handles->file,
-    m_buffer.get(),
-    count,
-    *dt,
-    &status);
+  MPI_File_write_all(handles->file, m_buffer.get(), count, *dt, &status);
   // TODO: check status
   m_buffer.reset();
   m_reader.next();

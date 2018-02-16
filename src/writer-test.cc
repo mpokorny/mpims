@@ -235,8 +235,8 @@ main(int argc, char* argv[]) {
     return -1;
   }
 
-  ::MPI_Init(&argc, &argv);
-  ::MPI_Comm_set_errhandler(MPI_COMM_WORLD, MPI_ERRORS_RETURN);
+  MPI_Init(&argc, &argv);
+  set_throw_exception_errhandler(MPI_COMM_WORLD);
 
   unordered_map<MSColumns, size_t> dimensions {
     {MSColumns::time, ntim},
@@ -279,9 +279,9 @@ main(int argc, char* argv[]) {
   unordered_map<MSColumns, DataDistribution> read_pgrid;
 
   int my_rank;
-  mpi_call(::MPI_Comm_rank, MPI_COMM_WORLD, &my_rank);
+  MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
   int world_size;
-  mpi_call(::MPI_Comm_size, MPI_COMM_WORLD, &world_size);
+  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
   for (auto& msao : ms_axis_orders) {
     for (auto& bs : buffer_sizes) {
@@ -307,8 +307,7 @@ main(int argc, char* argv[]) {
           }
           close(fd);
         }
-        mpi_call(
-          ::MPI_Bcast,
+        MPI_Bcast(
           const_cast<char*>(path.c_str()),
           path.size(),
           MPI_CHAR,
@@ -379,7 +378,7 @@ main(int argc, char* argv[]) {
       }
     }
   }
-  ::MPI_Finalize();
+  MPI_Finalize();
 
   return EXIT_SUCCESS;
 }

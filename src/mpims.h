@@ -29,14 +29,6 @@ private:
   }
 };
 
-template <typename Function, typename ...Args>
-void
-mpi_call(Function fn, Args...args) {
-  int rc = fn(args...);
-  if (rc != MPI_SUCCESS)
-    throw mpi_error(rc);
-}
-
 MPI_Errhandler
 comm_throw_exception();
 
@@ -54,8 +46,11 @@ datatype_is_predefined(MPI_Datatype dt);
 
 struct DatatypeDeleter {
   void operator()(MPI_Datatype* dt) {
-    if (*dt != MPI_DATATYPE_NULL && !datatype_is_predefined(*dt))
-      mpi_call(MPI_Type_free, dt);
+    if (*dt != MPI_DATATYPE_NULL && !datatype_is_predefined(*dt)) {
+      int rc = MPI_Type_free(dt);
+      if (rc != MPI_SUCCESS)
+        throw mpi_error(rc);
+    }
     delete dt;
   }
 };

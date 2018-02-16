@@ -431,10 +431,10 @@ main(int argc, char *argv[]) {
       debug_log);
 
   if (options_ok) {
-    ::MPI_Init(&argc, &argv);
-    ::MPI_Comm_set_errhandler(MPI_COMM_WORLD, MPI_ERRORS_RETURN);
+    MPI_Init(&argc, &argv);
+    set_throw_exception_errhandler(MPI_COMM_WORLD);
 
-    mpi_call(::MPI_Barrier, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
     Times times;
     unsigned num_ranks;
     std::tie(num_ranks, times) =
@@ -450,15 +450,14 @@ main(int argc, char *argv[]) {
               datarep,
               // readahead,
               debug_log);
-          mpi_call(::MPI_Barrier, MPI_COMM_WORLD);
+          MPI_Barrier(MPI_COMM_WORLD);
           return n;
         });
 
     int rank;
-    mpi_call(::MPI_Comm_rank, MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     std::array<double,2> tarray{ times.user, times.system };
-    mpi_call(
-      ::MPI_Reduce,
+    MPI_Reduce(
       (rank == 0) ? MPI_IN_PLACE : tarray.data(),
       tarray.data(),
       tarray.size(),
@@ -479,6 +478,6 @@ main(int argc, char *argv[]) {
         std::cout << " (" << tarray[1] / num_ranks << " sec avg)";
       std::cout << std::endl;
     }
-    ::MPI_Finalize();
+    MPI_Finalize();
   }
 }
