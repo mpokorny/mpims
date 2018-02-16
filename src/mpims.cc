@@ -1,8 +1,60 @@
+#include <mutex>
 #include <unordered_set>
 
 #include <mpims.h>
 
 using namespace mpims;
+
+MPI_Errhandler comm_exception_errhandler_instance;
+std::once_flag comm_flag;
+MPI_Errhandler file_exception_errhandler_instance;
+std::once_flag file_flag;
+
+template <typename H>
+void
+handle_exception_errhandler(H*, int* rc, ...) {
+  throw mpi_error(*rc);
+}
+
+void
+create_comm_exception_errhandler() {
+  MPI_Comm_create_errhandler(
+    handle_exception_errhandler<MPI_Comm>,
+    &comm_exception_errhandler_instance);
+}
+
+void
+create_file_exception_errhandler() {
+  MPI_File_create_errhandler(
+    handle_exception_errhandler<MPI_File>,
+    &file_exception_errhandler_instance);
+}
+
+MPI_Errhandler
+mpims::comm_throw_exception() {
+  std::call_once(comm_flag, create_comm_exception_errhandler);
+  return comm_exception_errhandler_instance;
+}
+
+MPI_Errhandler
+mpims::file_throw_exception() {
+  std::call_once(file_flag, create_file_exception_errhandler);
+  return file_exception_errhandler_instance;
+}
+
+void
+mpims::set_throw_exception_errhandler(MPI_Comm comm) {
+  int rc = MPI_Comm_set_errhandler(comm, comm_throw_exception());
+  if (rc != MPI_SUCCESS)
+    throw mpi_error(rc);
+}
+
+void
+mpims::set_throw_exception_errhandler(MPI_File file) {
+  int rc = MPI_File_set_errhandler(file, file_throw_exception());
+  if (rc != MPI_SUCCESS)
+    throw mpi_error(rc);
+}
 
 bool
 mpims::datatype_is_predefined(::MPI_Datatype dt) {

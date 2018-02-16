@@ -23,7 +23,7 @@ private:
   error_string(int errorcode) {
     char errorstr[MPI_MAX_ERROR_STRING];
     int resultlen;
-    ::MPI_Error_string(errorcode, errorstr, &resultlen);
+    MPI_Error_string(errorcode, errorstr, &resultlen);
     // TODO: check result of last call
     return std::string(errorstr);
   }
@@ -37,19 +37,31 @@ mpi_call(Function fn, Args...args) {
     throw mpi_error(rc);
 }
 
+MPI_Errhandler
+comm_throw_exception();
+
+MPI_Errhandler
+file_throw_exception();
+
+void
+set_throw_exception_errhandler(MPI_Comm comm);
+
+void
+set_throw_exception_errhandler(MPI_File file);
+
 bool
-datatype_is_predefined(::MPI_Datatype dt);
+datatype_is_predefined(MPI_Datatype dt);
 
 struct DatatypeDeleter {
-  void operator()(::MPI_Datatype* dt) {
+  void operator()(MPI_Datatype* dt) {
     if (*dt != MPI_DATATYPE_NULL && !datatype_is_predefined(*dt))
-      mpi_call(::MPI_Type_free, dt);
+      mpi_call(MPI_Type_free, dt);
     delete dt;
   }
 };
 
-std::unique_ptr<::MPI_Datatype, DatatypeDeleter>
-datatype(::MPI_Datatype dt = MPI_DATATYPE_NULL);
+std::unique_ptr<MPI_Datatype, DatatypeDeleter>
+datatype(MPI_Datatype dt = MPI_DATATYPE_NULL);
 
 } // end namespace mpims
 
