@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <complex>
 #include <cstring>
+#include <iostream>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -236,6 +237,9 @@ private:
 
   std::optional<int> m_rank;
 };
+
+void
+swap(MSArray& array1, MSArray& array2);
 
 }
 
