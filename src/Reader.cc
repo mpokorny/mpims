@@ -1265,7 +1265,7 @@ Reader::read_arrays(
     return result;
   } else {
     MPI_Request request;
-    MPI_File_iread_all, file, buffer.get(), count, *dt, &request);
+    MPI_File_iread_all(file, buffer.get(), count, *dt, &request);
     return MSArray(
       std::move(blocks),
       std::move(buffer),
