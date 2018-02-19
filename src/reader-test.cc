@@ -296,8 +296,7 @@ main(int argc, char* argv[]) {
             mso,
             pgrid,
             bs,
-            false
-            /*, true */);
+            false);
         while (reader != Reader::end()) {
           auto array = *reader;
           if (array) {

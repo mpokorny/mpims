@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <stdexcept>
+#include <type_traits>
 
 #include <mpi.h>
 
@@ -59,6 +60,15 @@ std::unique_ptr<MPI_Datatype, DatatypeDeleter>
 datatype(MPI_Datatype dt = MPI_DATATYPE_NULL);
 
 } // end namespace mpims
+
+template <
+  typename T,
+  typename = typename std::enable_if<std::is_unsigned<T>::value>::type >
+T
+ceil(T num, T denom) {
+  return (num + (denom - 1)) / denom;
+}
+
 
 #endif // MPIMS_H_
 

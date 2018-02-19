@@ -543,23 +543,53 @@ protected:
     bool debug_log);
 
   static std::tuple<std::unique_ptr<MPI_Datatype, DatatypeDeleter>, unsigned>
-    init_buffer_datatype(
-      const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
-      const std::shared_ptr<std::vector<IterParams> >& iter_params,
-      bool ms_buffer_order,
-      bool tail_array,
-      int rank,
-      bool debug_log);
+  init_buffer_datatype(
+    const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
+    const std::shared_ptr<std::vector<IterParams> >& iter_params,
+    bool ms_buffer_order,
+    bool tail_array,
+    int rank,
+    bool debug_log);
+
+  static std::tuple<
+    std::unique_ptr<MPI_Datatype, DatatypeDeleter>,
+    std::size_t>
+  vector_datatype(
+    std::size_t value_extent,
+    const std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
+    std::size_t dt_extent,
+    std::size_t num_blocks,
+    std::size_t block_len,
+    std::size_t terminal_block_len,
+    std::size_t stride,
+    std::size_t len);
+
+  static std::tuple<
+    std::unique_ptr<MPI_Datatype, DatatypeDeleter>,
+    std::size_t,
+    bool>
+  compound_datatype(
+    std::size_t value_extent,
+    const std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
+    std::size_t dt_extent,
+    std::size_t stride,
+    const std::optional<std::size_t>& num_blocks,
+    std::size_t block_len,
+    std::size_t terminal_block_len,
+    std::size_t len);
+
+  static std::tuple<std::size_t, bool>
+  tail_buffer_blocks(const IterParams& ip);
 
   static std::unique_ptr<MPI_Datatype, DatatypeDeleter>
-    init_fileview(
-      MPI_File file,
-      const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
-      const std::shared_ptr<std::vector<IterParams> >& iter_params,
-      const std::shared_ptr<ArrayIndexer<MSColumns> >& ms_indexer,
-      bool tail_fileview,
-      int rank,
-      bool debug_log);
+  init_fileview(
+    MPI_File file,
+    const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
+    const std::shared_ptr<std::vector<IterParams> >& iter_params,
+    const std::shared_ptr<ArrayIndexer<MSColumns> >& ms_indexer,
+    bool tail_fileview,
+    int rank,
+    bool debug_log);
 
   static std::unique_ptr<std::vector<IndexBlockSequenceMap<MSColumns> > >
   make_index_block_sequences(
