@@ -88,8 +88,15 @@ Writer::next() {
   } else {
     buff = m_array.value().buffer().value();
   }
+  MPI_Status status;
   MPI_File_write_all(handles->file, buff, count, *dt, &status);
-  // TODO: check status
+  int st_count;
+  MPI_Get_count(&status, *dt, &st_count);
+  if (static_cast<unsigned>(st_count) != count)
+    std::clog << "(" << m_reader.m_rank << ") "
+              << "expected " << count
+              << ", got " << st_count
+              << std::endl;
   m_array = std::nullopt;
   m_reader.next();
 }
