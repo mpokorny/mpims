@@ -1098,6 +1098,7 @@ Reader::set_fileview(TraversalState& traversal_state, MPI_File file) const {
       [&index, &oss](const IterParams& ip) {
         oss << "; " << mscol_nickname(ip.axis) << " " << index.at(ip.axis);
       });
+    oss << (traversal_state.in_tail ? "" : " not") << " in tail";
     oss << std::endl;
     std::clog << oss.str();
   }
