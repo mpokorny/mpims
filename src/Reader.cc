@@ -242,7 +242,7 @@ Reader::initialize(
     pdist.num_processes =
       (ax->is_unbounded()
        ? pdist.num_processes
-       : std::min(ceil(ax->length().value_or(SIZE_MAX), pdist.block_size),
+       : std::min(ceil(ax->length().value(), pdist.block_size),
                   pdist.num_processes));
   }
 
