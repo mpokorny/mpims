@@ -183,6 +183,8 @@ Reader::wbegin(
     buffer_size,
     traversal_state);
 
+  MPI_File_set_atomicity(file, true); // TODO: not needed for write only
+
   return
     Reader(
       MPIState(reduced_comm, priv_info, file, path),
@@ -480,8 +482,9 @@ Reader::start_next() {
   m_next_traversal_state = m_traversal_state;
   advance_to_buffer_end(m_next_traversal_state);
 
+  // TODO: modify for unbounded ms
   m_next_traversal_state.eof =
-    m_next_traversal_state.axis_iters.empty() || !m_ms_array.buffer();
+    m_next_traversal_state.axis_iters.empty();
   std::array<bool, 2>
     tests{ m_next_traversal_state.cont, m_next_traversal_state.eof };
   auto handles = m_mpi_state.handles();
