@@ -76,8 +76,7 @@ Writer::next() {
     std::clog << std::endl;
   }
   if (m_array)
-    MPI_File_seek(handles->file, m_array.value().offset(), MPI_SEEK_SET);
-  MPI_Status status;
+    MPI_File_seek(handles->file, getv().offset(), MPI_SEEK_SET);
   std::shared_ptr<const MPI_Datatype> dt;
   unsigned count;
   std::tie(dt, count) = m_reader.m_traversal_state.buffer_datatype();
