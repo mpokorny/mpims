@@ -242,7 +242,8 @@ Reader::initialize(
     pdist.num_processes =
       (ax->is_unbounded()
        ? pdist.num_processes
-       : std::min(ceil(ax->length(), pdist.block_size), pdist.num_processes));
+       : std::min(ceil(ax->length().value_or(SIZE_MAX), pdist.block_size),
+                  pdist.num_processes));
   }
 
   // compute process grid size
@@ -945,15 +946,14 @@ Reader::compound_datatype(
   const std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
   std::size_t dt_extent,
   std::size_t stride,
-  const std::optional<std::size_t>& num_blocks,
+  std::size_t num_blocks,
   std::size_t block_len,
   std::size_t terminal_block_len,
-  std::size_t len) {
+  const std::optional<std::size_t>& len) {
 
   // resize current fileview_datatype to equal stride between elements
   // on this axis
   std::unique_ptr<MPI_Datatype, DatatypeDeleter> result_dt;
-  std::optional<std::size_t> result_dt_count;
   std::size_t result_dt_extent;
 
   // create (blocked) vector of fileview_datatype elements
@@ -962,16 +962,13 @@ Reader::compound_datatype(
       value_extent,
       dt,
       dt_extent,
-      num_blocks.value_or(1),
+      num_blocks,
       block_len,
       terminal_block_len,
       stride,
-      len);
+      len.value_or(stride));
   return
-    std::make_tuple(
-      std::move(result_dt),
-      result_dt_extent,
-      !num_blocks.has_value());
+    std::make_tuple(std::move(result_dt), result_dt_extent, !len.has_value());
 }
 
 std::tuple<std::size_t, bool>
@@ -982,9 +979,9 @@ Reader::tail_buffer_blocks(const IterParams& ip) {
     std::size_t capacity = std::max(ip.buffer_capacity, 1uL);
     auto nr = ip.stride / ip.block_len;
     auto full_buffer_capacity = capacity * nr;
-    auto nb = ceil(ip.length, full_buffer_capacity);
+    auto nb = ceil(ip.length.value(), full_buffer_capacity);
     auto tail_origin = full_buffer_capacity * (nb - 1);
-    auto tail_rem = ip.length - tail_origin;
+    auto tail_rem = ip.length.value() - tail_origin;
     tail_num_blocks = ceil(tail_rem, ip.stride);
     uniform = tail_rem % ip.stride == 0;
   } else {
@@ -1035,15 +1032,12 @@ Reader::init_fileview(
         throw std::runtime_error("unbounded");
 
       auto ip = find_iter_params(iter_params, ax.id());
-      std::optional<std::size_t> num_blocks = 1;
-      std::size_t len = ip->length;
-      std::size_t block_len = 1;
-      std::size_t terminal_block_len = 1;
+      std::size_t num_blocks = 1;
+      std::optional<std::size_t> len = ip->length;
+      std::size_t block_len = ip->block_len;
+      std::size_t terminal_block_len = ip->terminal_block_len;
       if (ip->within_fileview) {
-        num_blocks = ip->max_blocks;
-        len = ip->length;
-        block_len = ip->block_len;
-        terminal_block_len = ip->terminal_block_len;
+        num_blocks = ip->max_blocks.value();
       } else if (ip->buffer_capacity > 0) {
         assert(ip->buffer_capacity % ip->block_len == 0);
         if (!tail_fileview) {
@@ -1051,18 +1045,15 @@ Reader::init_fileview(
           terminal_block_len = ip->block_len;
         } else {
           num_blocks = tail_num_blocks;
-          terminal_block_len = ip->terminal_block_len;
         }
-        len = ip->length;
-        block_len = ip->block_len;
       }
-      auto i0 = ms_indexer->offset_of_(index);
+      auto i0 = ms_indexer->offset_of_(index).value();
       ++index[ip->axis];
-      auto i1 = ms_indexer->offset_of_(index);
+      auto i1 = ms_indexer->offset_of_(index).value();
       --index[ip->axis];
       std::size_t unit_stride = i1 - i0;
       index[ip->axis] += ip->stride;
-      auto is = ms_indexer->offset_of_(index);
+      auto is = ms_indexer->offset_of_(index).value();
       index[ip->axis] -= ip->stride;
       std::size_t block_stride = is - i0;
 

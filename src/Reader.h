@@ -590,10 +590,10 @@ protected:
     const std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
     std::size_t dt_extent,
     std::size_t stride,
-    const std::optional<std::size_t>& num_blocks,
+    std::size_t num_blocks,
     std::size_t block_len,
     std::size_t terminal_block_len,
-    std::size_t len);
+    const std::optional<std::size_t>& len);
 
   static std::tuple<std::size_t, bool>
   tail_buffer_blocks(const IterParams& ip);
