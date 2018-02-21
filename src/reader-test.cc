@@ -245,6 +245,14 @@ main(int argc, char* argv[]) {
       ColumnAxis<MSColumns, MSColumns::polarization_product>(npol)
       };
 
+  vector<ColumnAxisBase<MSColumns> > ms_shape_u {
+    ColumnAxis<MSColumns, MSColumns::time>(),
+      ColumnAxis<MSColumns, MSColumns::spectral_window>(nspw),
+      ColumnAxis<MSColumns, MSColumns::baseline>(nbal),
+      ColumnAxis<MSColumns, MSColumns::channel>(nch),
+      ColumnAxis<MSColumns, MSColumns::polarization_product>(npol)
+      };
+
   write_file(argv[1], ms_shape);
 
   size_t max_buffer_size =
@@ -285,51 +293,57 @@ main(int argc, char* argv[]) {
   for (auto& mso : ms_order) {
     for (auto& to : traversal_orders) {
       for (auto& bs : buffer_sizes) {
-        ostringstream output;
-        output << "========= traversal_order "
-               << colnames(to)
-               << "; buffer_size "
-               << num_elements(bs)
-               << (mso ? " (ms order)" : "")
-               << " ========="
-               << endl;
-        auto reader =
-          Reader::begin(
-            argv[1],
-            "native",
-            MPI_COMM_WORLD,
-            MPI_INFO_NULL,
-            ms_shape,
-            to,
-            mso,
-            pgrid,
-            bs,
-            false);
-        while (reader != Reader::end()) {
-          const MSArray& array = *reader;
-          if (array.buffer()) {
-            if (cb(array, output))
+        for (auto& mss : {ms_shape, ms_shape_u}) {
+          if (mss[0].is_unbounded() && to[0] !=  mss[0].id())
+            continue;
+          ostringstream output;
+          output << "========= traversal_order "
+                 << colnames(to)
+                 << "; buffer_size "
+                 << num_elements(bs)
+                 << (mso ? " (ms order)" : "")
+                 << (mss[0].is_unbounded() ? " (unspecified ms length)" : "")
+                 << " ========="
+                 << endl;
+          auto reader =
+            Reader::begin(
+              argv[1],
+              "native",
+              MPI_COMM_WORLD,
+              MPI_INFO_NULL,
+              mss,
+              to,
+              mso,
+              pgrid,
+              bs,
+              false,
+              true);
+          while (reader != Reader::end()) {
+            const MSArray& array = *reader;
+            if (array.buffer()) {
+              if (cb(array, output))
+                ++reader;
+              else
+                reader.interrupt();
+            }
+            else {
               ++reader;
-            else
-              reader.interrupt();
+            }
           }
-          else {
-            ++reader;
-          }
-        }
 
-        int output_rank = 0;
-        while (output_rank < world_size) {
-          if (output_rank == my_rank) {
-            if (world_size > 1)
-              cout << "*************** rank "
-                   << my_rank
-                   << " ***************"
-                   << endl;
-            cout << output.str();
+          int output_rank = 0;
+          while (output_rank < world_size) {
+            if (output_rank == my_rank) {
+              if (world_size > 1)
+                cout << "*************** rank "
+                     << my_rank
+                     << " ***************"
+                     << endl;
+              cout << output.str();
+            }
+            ++output_rank;
+            MPI_Barrier(MPI_COMM_WORLD);
           }
-          ++output_rank;
-          MPI_Barrier(MPI_COMM_WORLD);
         }
       }
     }
