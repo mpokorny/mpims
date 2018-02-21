@@ -587,7 +587,9 @@ protected:
     std::size_t block_len,
     std::size_t terminal_block_len,
     std::size_t stride,
-    std::size_t len);
+    std::size_t len,
+    int rank,
+    bool debug_log);
 
   static std::tuple<
     std::unique_ptr<MPI_Datatype, DatatypeDeleter>,
@@ -601,7 +603,9 @@ protected:
     std::size_t num_blocks,
     std::size_t block_len,
     std::size_t terminal_block_len,
-    const std::optional<std::size_t>& len);
+    const std::optional<std::size_t>& len,
+    int rank,
+    bool debug_log);
 
   static std::tuple<std::size_t, bool>
   tail_buffer_blocks(const IterParams& ip);

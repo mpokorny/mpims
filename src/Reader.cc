@@ -909,8 +909,23 @@ Reader::vector_datatype(
   std::size_t block_len,
   std::size_t terminal_block_len,
   std::size_t stride,
-  std::size_t len) {
+  std::size_t len,
+  int rank,
+  bool debug_log) {
 
+  if (debug_log) {
+    std::ostringstream oss;
+    oss << "(" << rank << ") "
+        << "vector_datatype(ve " << value_extent
+        << ", de " << dt_extent
+        << ", nb " << num_blocks
+        << ", bl " << block_len
+        << ", tb " << terminal_block_len
+        << ", st " << stride
+        << ", ln " << len
+        << ")" << std::endl;
+    std::clog << oss.str();
+  }
   auto result_dt = datatype();
   std::size_t result_dt_extent = len * dt_extent;
   std::size_t size = result_dt_extent * value_extent;
@@ -953,7 +968,9 @@ Reader::compound_datatype(
   std::size_t num_blocks,
   std::size_t block_len,
   std::size_t terminal_block_len,
-  const std::optional<std::size_t>& len) {
+  const std::optional<std::size_t>& len,
+  int rank,
+  bool debug_log) {
 
   // resize current fileview_datatype to equal stride between elements
   // on this axis
@@ -970,7 +987,9 @@ Reader::compound_datatype(
       block_len,
       terminal_block_len,
       stride,
-      len.value_or(stride));
+      len.value_or(stride),
+      rank,
+      debug_log);
   return
     std::make_tuple(std::move(result_dt), result_dt_extent, !len.has_value());
 }
@@ -1070,7 +1089,9 @@ Reader::init_fileview(
           num_blocks,
           block_len,
           terminal_block_len,
-          len);
+          len,
+          rank,
+          debug_log);
     });
 
   MPI_Type_commit(result.get());
