@@ -293,9 +293,17 @@ public:
     }
 
     std::optional<std::size_t>
-    true_length() const {
+    accessible_length() const {
       if (max_blocks.has_value())
         return block_len * (max_blocks.value() - 1) + terminal_block_len;
+      else
+        return std::nullopt;
+    }
+
+    std::optional<std::size_t>
+    max_accessible_length() const {
+      if (max_blocks.has_value())
+        return block_len * (max_blocks.value() - 1) + max_terminal_block_len;
       else
         return std::nullopt;
     }
@@ -368,10 +376,10 @@ public:
     num_remaining() const {
       if (at_end || !at_data)
         return 0;
-      auto true_length = params->true_length();
-      if (true_length) {
+      auto accessible_length = params->accessible_length();
+      if (accessible_length) {
         auto block_origin = params->origin + block * params->stride;
-        return (true_length.value()
+        return (accessible_length.value()
                 - (block * params->block_len + index - block_origin));
       } else {
         return std::nullopt;

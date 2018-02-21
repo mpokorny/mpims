@@ -675,11 +675,7 @@ Reader::init_traversal_partitions(
         / start_buffer->block_len,
         start_buffer->max_blocks.value_or(SIZE_MAX))
       * start_buffer->block_len;
-    std::optional<std::size_t> full_len =
-      (start_buffer->max_blocks
-       ? std::optional(
-         start_buffer->block_len * start_buffer->max_blocks.value())
-       : std::nullopt);
+    std::optional<std::size_t> full_len = start_buffer->max_accessible_length();
     if (len == 0) {
       if (start_buffer != iter_params->rbegin()) {
         --start_buffer;
@@ -767,9 +763,7 @@ Reader::init_traversal_partitions(
         if ((ooo
              && !(ip->fully_in_array
                   || (ip->max_blocks
-                      && (ip->buffer_capacity >=
-                          ip->block_len * (ip->max_blocks.value() - 1)
-                          + ip->max_terminal_block_len))))
+                      && (ip->buffer_capacity >= ip->max_accessible_length()))))
             || !std::get<1>(tail_buffer_blocks(*ip)))
           *inner_fileview_axis = ip->axis;
       }
@@ -823,15 +817,17 @@ Reader::init_buffer_datatype(
     std::begin(reordered_ips),
     std::end(reordered_ips),
     [&](auto& ip) {
-      auto true_length = ip->true_length();
+      auto accessible_length = ip->accessible_length();
       if (ip->fully_in_array) {
         buffer.emplace_back(
           static_cast<unsigned>(ip->axis),
-          true_length.value());
+          accessible_length.value());
       } else if (ip->buffer_capacity > 0) {
         buffer_capacity = ip->buffer_capacity;
         tail_buffer_capacity = (
-          true_length ? (true_length.value() % ip->buffer_capacity) : 0);
+          accessible_length
+          ? (accessible_length.value() % ip->buffer_capacity)
+          : 0);
         std::size_t capacity =
           tail_array ? tail_buffer_capacity : buffer_capacity;
         buffer.emplace_back(static_cast<unsigned>(ip->axis), capacity);
@@ -858,7 +854,9 @@ Reader::init_buffer_datatype(
       auto ip = find_iter_params(iter_params, ax.id());
       if (ip->fully_in_array || ip->buffer_capacity > 1) {
         auto count =
-          ip->fully_in_array ? ip->true_length().value() : buffer_capacity;
+          (ip->fully_in_array
+           ? ip->accessible_length().value()
+           : buffer_capacity);
         auto i0 = buffer_indexer->offset_of_(index).value();
         ++index[ip->axis];
         auto i1 = buffer_indexer->offset_of_(index).value();
@@ -1042,8 +1040,8 @@ Reader::init_fileview(
       if (ip->within_fileview) {
         num_blocks = ip->max_blocks.value();
       } else if (ip->buffer_capacity > 0) {
-        assert(ip->buffer_capacity % ip->block_len == 0);
         if (!tail_fileview) {
+          assert(ip->buffer_capacity % ip->block_len == 0);
           num_blocks = ip->buffer_capacity / ip->block_len;
           terminal_block_len = ip->block_len;
         } else {
@@ -1128,9 +1126,9 @@ Reader::make_index_block_sequences(
     [&result](const IterParams& ip) {
       std::vector<std::vector<IndexBlock> > blocks;
       if (ip.fully_in_array || ip.buffer_capacity > 0) {
-        auto true_length = ip.true_length();
+        auto accessible_length = ip.accessible_length();
         std::vector<IndexBlock> merged_blocks;
-        if (true_length) {
+        if (accessible_length) {
           // merge contiguous blocks
           std::size_t start = ip.origin;
           std::size_t end = ip.origin + ip.block_len;
@@ -1166,8 +1164,8 @@ Reader::make_index_block_sequences(
         // when entire axis doesn't fit into the array, we might have to split
         // blocks
         if (!ip.fully_in_array
-            && (true_length
-                && ip.true_length().value() > ip.buffer_capacity)) {
+            && (accessible_length
+                && ip.accessible_length().value() > ip.buffer_capacity)) {
           std::size_t rem = ip.buffer_capacity;
           std::vector<IndexBlock> ibs;
           std::for_each(
