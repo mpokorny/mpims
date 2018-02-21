@@ -1108,8 +1108,11 @@ Reader::init_fileview(
   if (debug_log) {
     MPI_Count size;
     MPI_Type_size_x(*result, &size);
+    MPI_Aint extent;
+    MPI_File_get_type_extent(file, *result, &extent);
     std::clog << "(" << rank << ") fileview datatype size "
               << size / value_extent
+              << ", extent " << extent
               << std::endl;
   }
   return result;
