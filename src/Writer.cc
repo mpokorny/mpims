@@ -96,6 +96,8 @@ Writer::next() {
               << "expected " << count
               << ", got " << st_count
               << std::endl;
+  if (m_array)
+    m_reader.m_ms_array.swap(m_array.value());
   m_array = std::nullopt;
   m_reader.next();
 }
