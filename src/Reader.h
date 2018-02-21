@@ -607,7 +607,7 @@ protected:
     int rank,
     bool debug_log);
 
-  static std::tuple<std::size_t, bool>
+  static std::tuple<std::optional<std::tuple<std::size_t, std::size_t> >, bool>
   tail_buffer_blocks(const IterParams& ip);
 
   static std::unique_ptr<MPI_Datatype, DatatypeDeleter>

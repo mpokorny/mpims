@@ -993,24 +993,34 @@ Reader::compound_datatype(
     std::make_tuple(std::move(result_dt), result_dt_extent, !len.has_value());
 }
 
-std::tuple<std::size_t, bool>
+std::tuple<std::optional<std::tuple<std::size_t, std::size_t> >, bool>
 Reader::tail_buffer_blocks(const IterParams& ip) {
-  std::size_t tail_num_blocks;
+  std::optional<std::tuple<std::size_t, std::size_t> > tb;
+  std::size_t tail_num_blocks, tail_terminal_block_len;
   bool uniform;
   if (!ip.fully_in_array) {
-    std::size_t capacity = std::max(ip.buffer_capacity, 1uL);
-    auto nr = ip.stride / ip.block_len;
-    auto full_buffer_capacity = capacity * nr;
-    auto nb = ceil(ip.length.value(), full_buffer_capacity);
-    auto tail_origin = full_buffer_capacity * (nb - 1);
-    auto tail_rem = ip.length.value() - tail_origin;
-    tail_num_blocks = ceil(tail_rem, ip.stride);
-    uniform = tail_rem % ip.stride == 0;
+    if (ip.length) {
+      std::size_t capacity = std::max(ip.buffer_capacity, 1uL);
+      auto nr = ip.stride / ip.block_len;
+      auto full_buffer_capacity = capacity * nr;
+      auto nb = ceil(ip.length.value(), full_buffer_capacity);
+      auto tail_origin = full_buffer_capacity * (nb - 1);
+      auto tail_rem = ip.length.value() - tail_origin;
+      tail_num_blocks = ceil(tail_rem, ip.stride);
+      tail_terminal_block_len = (tail_rem - ip.origin) % ip.block_len;
+      if (tail_terminal_block_len == 0)
+        tail_terminal_block_len = ip.block_len;
+      uniform = tail_rem % ip.stride == 0;
+      tb = std::make_tuple(tail_num_blocks, tail_terminal_block_len);
+    } else {
+      tb = std::nullopt;
+      uniform = true;
+    }
   } else {
-    tail_num_blocks = 0;
+    tb = std::make_tuple(0, 0);
     uniform = true;
   }
-  return std::make_tuple(tail_num_blocks, uniform);
+  return std::make_tuple(tb, uniform);
 }
 
 std::unique_ptr<MPI_Datatype, DatatypeDeleter>
@@ -1024,7 +1034,7 @@ Reader::init_fileview(
   bool debug_log) {
 
   ArrayIndexer<MSColumns>::index index;
-  std::size_t tail_num_blocks;
+  std::optional<std::tuple<std::size_t, std::size_t> > tail_buffer;
   std::for_each(
     ms_shape.crbegin(),
     ms_shape.crend(),
@@ -1032,7 +1042,7 @@ Reader::init_fileview(
       auto ip = find_iter_params(iter_params, ax.id());
       index[ip->axis] = 0;
       if (!ip->within_fileview && ip->buffer_capacity > 0) {
-        std::tie(tail_num_blocks, std::ignore) =
+        std::tie(tail_buffer, std::ignore) =
           tail_buffer_blocks(*ip);
       }
     });
