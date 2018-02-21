@@ -482,9 +482,8 @@ Reader::start_next() {
   m_next_traversal_state = m_traversal_state;
   advance_to_buffer_end(m_next_traversal_state);
 
-  // TODO: modify for unbounded ms
   m_next_traversal_state.eof =
-    m_next_traversal_state.axis_iters.empty();
+    m_next_traversal_state.axis_iters.empty() || !m_ms_array.buffer();
   std::array<bool, 2>
     tests{ m_next_traversal_state.cont, m_next_traversal_state.eof };
   auto handles = m_mpi_state.handles();
