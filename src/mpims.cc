@@ -57,8 +57,8 @@ mpims::set_throw_exception_errhandler(MPI_File file) {
 }
 
 bool
-mpims::datatype_is_predefined(::MPI_Datatype dt) {
-  const std::unordered_set<::MPI_Datatype> predefined {
+mpims::datatype_is_predefined(MPI_Datatype dt) {
+  const std::unordered_set<MPI_Datatype> predefined {
     MPI_CHAR, MPI_SHORT, MPI_INT, MPI_LONG, MPI_LONG_LONG_INT,
       MPI_SIGNED_CHAR, MPI_UNSIGNED_CHAR, MPI_UNSIGNED_SHORT, MPI_UNSIGNED,
       MPI_UNSIGNED_LONG, MPI_UNSIGNED_LONG_LONG, MPI_FLOAT, MPI_DOUBLE,
@@ -72,8 +72,7 @@ mpims::datatype_is_predefined(::MPI_Datatype dt) {
   return predefined.count(dt);
 }
 
-std::unique_ptr<::MPI_Datatype, DatatypeDeleter>
-mpims::datatype(::MPI_Datatype dt) {
-  return std::unique_ptr<::MPI_Datatype, DatatypeDeleter>(
-    new ::MPI_Datatype(dt));
+std::unique_ptr<MPI_Datatype, DatatypeDeleter>
+mpims::datatype(MPI_Datatype dt) {
+  return std::unique_ptr<MPI_Datatype, DatatypeDeleter>(new MPI_Datatype(dt));
 }
