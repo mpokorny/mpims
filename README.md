@@ -64,3 +64,36 @@ created for the main developer's own environment.
 - cmake
 - MPI library, built with support for the targeted file systems
 - g++-7 (mpims uses c++17 features)
+
+## Build artifacts ##
+
+### libmpims
+
+Library for reading and writing (uniform) MS data columns using MPI-IO.
+
+### reader-test
+
+A test suite for the reader class of *libmpims*, `mpims::Reader`. This test
+suite is not automated, and it includes test configurations for two data
+distributions (among processes), which can only be selected by modifying source
+code and recompiling. Additionally, although various failures are clearly
+indicated in the output, there are some failure modes that are not so obvious,
+and require a careful reading of the output to find. Nevertheless, I have found
+this test suite to be very useful.
+
+### writer-test
+
+A test suite for the writer class of *libmpims*, `mpims::Writer`. Similar
+caveats apply to this test suite as for *reader-test*.
+
+### preadcol
+
+An application for reading any uniform MS data column in parallel, with
+reporting of the time required to complete. Many options are supported...*which
+will be documented here eventually*.
+
+### pwritecol
+
+An application for writing any uniform MS data column in parallel, with
+reporting of the time required to complete. Many options are supported...*which
+will be documented here eventually*.
