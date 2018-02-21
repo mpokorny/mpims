@@ -1069,14 +1069,21 @@ Reader::init_fileview(
       std::size_t block_len = ip->block_len;
       std::size_t terminal_block_len = ip->terminal_block_len;
       if (ip->within_fileview) {
-        num_blocks = ip->max_blocks.value();
-      } else if (ip->buffer_capacity > 0) {
-        if (!tail_fileview) {
-          assert(ip->buffer_capacity % ip->block_len == 0);
+        if (ip->max_blocks) {
+          num_blocks = ip->max_blocks.value();
+        } else if (ip->buffer_capacity > 0) {
           num_blocks = ip->buffer_capacity / ip->block_len;
+          len = ip->buffer_capacity;
+        }
+      } else if (ip->buffer_capacity > 0) {
+        assert(ip->buffer_capacity % ip->block_len == 0);
+        if (!tail_fileview || !len) {
+          num_blocks = ip->buffer_capacity / ip->block_len;
+          if (!len)
+            len = ip->buffer_capacity;
           terminal_block_len = ip->block_len;
         } else {
-          num_blocks = tail_num_blocks;
+          std::tie(num_blocks, terminal_block_len) = tail_buffer.value();
         }
       }
       auto i0 = ms_indexer->offset_of_(index).value();
