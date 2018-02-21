@@ -1052,7 +1052,7 @@ Reader::init_fileview(
     [&](auto& ax) {
 
       if (unbounded_dt_count)
-        throw std::runtime_error("unbounded");
+        throw UnboundedArrayError();
 
       auto ip = find_iter_params(iter_params, ax.id());
       std::size_t num_blocks = 1;
