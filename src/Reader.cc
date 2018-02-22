@@ -918,7 +918,10 @@ Reader::vector_datatype(
   if (block_len > 0 && nb > 0) {
     auto dt1 = datatype();
     if (block_len == terminal_block_len || terminal_block_len == 0) {
-      MPI_Type_vector(nb, block_len, stride, *dt, dt1.get());
+      if (block_len == stride)
+        MPI_Type_contiguous(nb * block_len, *dt, dt1.get());
+      else
+        MPI_Type_vector(nb, block_len, stride, *dt, dt1.get());
     } else {
       auto blocklengths = std::make_unique<int[]>(nb);
       auto displacements = std::make_unique<int[]>(nb);
