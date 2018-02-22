@@ -293,7 +293,7 @@ main(int argc, char* argv[]) {
   for (auto& mso : ms_order) {
     for (auto& to : traversal_orders) {
       for (auto& bs : buffer_sizes) {
-        for (auto& mss : {ms_shape, ms_shape_u}) {
+        for (auto& mss : {ms_shape /*, ms_shape_u*/}) {
           if (mss[0].is_unbounded() && to[0] !=  mss[0].id())
             continue;
           ostringstream output;
