@@ -915,7 +915,7 @@ Reader::vector_datatype(
   std::size_t result_dt_extent = len * dt_extent;
   std::size_t size = result_dt_extent * value_extent;
   auto nb = num_blocks - ((terminal_block_len == 0) ? 1 : 0);
-  if (block_len > 0 && nb > 0) {
+  if (nb * block_len > 1) {
     auto dt1 = datatype();
     if (block_len == terminal_block_len || terminal_block_len == 0) {
       if (block_len == stride)
