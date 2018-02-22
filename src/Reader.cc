@@ -53,6 +53,9 @@ Reader::Reader(
   MPI_Comm_rank(handles->comm, reinterpret_cast<int*>(&m_rank));
 
   if (handles->file != MPI_FILE_NULL) {
+    MPI_Aint ve;
+    MPI_File_get_type_extent(handles->file, MPI_CXX_FLOAT_COMPLEX, &ve);
+    m_value_extent = static_cast<std::size_t>(ve);
     if (!*m_inner_fileview_axis)
       set_fileview(m_traversal_state, handles->file);
     const IterParams* init_params = &(*m_iter_params)[0];
@@ -552,6 +555,7 @@ Reader::swap(Reader& other) {
   swap(m_debug_log, other.m_debug_log);
   swap(m_traversal_state, other.m_traversal_state);
   swap(m_next_traversal_state, other.m_next_traversal_state);
+  swap(m_value_extent, other.m_value_extent);
   swap(m_ms_array, other.m_ms_array);
   swap(m_next_ms_array, other.m_next_ms_array);
 }
@@ -672,7 +676,7 @@ Reader::init_traversal_partitions(
       std::min(
         (max_buffer_length / start_buffer->array_length)
         / start_buffer->block_len,
-        start_buffer->max_blocks.value_or(SIZE_MAX))
+        start_buffer->max_blocks.value_or(1))
       * start_buffer->block_len;
     std::optional<std::size_t> full_len = start_buffer->max_accessible_length();
     if (len == 0) {
@@ -851,7 +855,16 @@ Reader::init_buffer_datatype(
     ms_shape.crend(),
     [&](auto& ax) {
       auto ip = find_iter_params(iter_params, ax.id());
+
+      if (ip->buffer_capacity > 0 && result_dt_count > 1) {
+        auto dt = std::move(result_dt);
+        result_dt = datatype();
+        MPI_Type_contiguous(result_dt_count, *dt, result_dt.get());
+        result_dt_count = 1;
+      }
+
       if (ip->fully_in_array || ip->buffer_capacity > 1) {
+
         auto count =
           (ip->fully_in_array
            ? ip->accessible_length().value()
@@ -902,7 +915,7 @@ std::tuple<
   std::size_t>
 Reader::vector_datatype(
   std::size_t value_extent,
-  const std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
+  std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
   std::size_t dt_extent,
   std::size_t num_blocks,
   std::size_t block_len,
@@ -912,8 +925,8 @@ Reader::vector_datatype(
   int rank,
   bool debug_log) {
 
+  std::ostringstream oss;
   if (debug_log) {
-    std::ostringstream oss;
     oss << "(" << rank << ") "
         << "vector_datatype(ve " << value_extent
         << ", de " << dt_extent
@@ -922,8 +935,7 @@ Reader::vector_datatype(
         << ", tb " << terminal_block_len
         << ", st " << stride
         << ", ln " << len
-        << ")" << std::endl;
-    std::clog << oss.str();
+        << ")";
   }
   auto result_dt = datatype();
   std::size_t result_dt_extent = len * dt_extent;
@@ -932,10 +944,14 @@ Reader::vector_datatype(
   if (nb * block_len > 1) {
     auto dt1 = datatype();
     if (block_len == terminal_block_len || terminal_block_len == 0) {
-      if (block_len == stride)
+      if (block_len == stride) {
         MPI_Type_contiguous(nb * block_len, *dt, dt1.get());
-      else
+        if (debug_log) oss << " contig " << nb * block_len;
+      } else {
         MPI_Type_vector(nb, block_len, stride, *dt, dt1.get());
+        if (debug_log)
+          oss << "; vector " << nb << "," << block_len << "," << stride;
+      }
     } else {
       auto blocklengths = std::make_unique<int[]>(nb);
       auto displacements = std::make_unique<int[]>(nb);
@@ -944,6 +960,10 @@ Reader::vector_datatype(
         displacements[i] = i * stride;
       }
       blocklengths[nb - 1] = terminal_block_len;
+      if (debug_log)
+        oss << "; indexed " << nb << "," << block_len
+            << "," << terminal_block_len
+            << "," << stride;
       MPI_Type_indexed(
         nb,
         blocklengths.get(),
@@ -951,17 +971,37 @@ Reader::vector_datatype(
         *dt,
         dt1.get());
     }
-    MPI_Type_create_resized(*dt1, 0, size, result_dt.get());
+    MPI_Aint lb, extent;
+    MPI_Type_get_extent(*dt1, &lb, &extent); // FIXME: use MPI_File_get_type_extent
+    assert(static_cast<std::size_t>(extent) <= size);
+    if (static_cast<std::size_t>(extent) != size){
+      MPI_Type_create_resized(*dt1, 0, size, result_dt.get());
+      if (debug_log)
+        oss << "; resize " << size;
+    } else {
+      result_dt = std::move(dt1);
+    }
   } else {
-    MPI_Type_create_resized(*dt, 0, size, result_dt.get());
+    MPI_Aint lb, extent;
+    MPI_Type_get_extent(*dt, &lb, &extent); // FIXME: use MPI_File_get_type_extent
+    assert(static_cast<std::size_t>(extent) <= size);
+    if (static_cast<std::size_t>(extent) != size) {
+      MPI_Type_create_resized(*dt, 0, size, result_dt.get());
+      if (debug_log)
+        oss << "; resize only " << size;
+    } else {
+      result_dt = std::move(dt);
+    }
   }
+  if (debug_log)
+    std::clog << oss.str() << std::endl;
   return std::make_tuple(std::move(result_dt), result_dt_extent);
 }
 
 std::tuple<std::unique_ptr<MPI_Datatype, DatatypeDeleter>, std::size_t, bool>
 Reader::compound_datatype(
   std::size_t value_extent,
-  const std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
+  std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
   std::size_t dt_extent,
   std::size_t stride,
   std::size_t num_blocks,
@@ -1007,9 +1047,16 @@ Reader::tail_buffer_blocks(const IterParams& ip) {
       auto tail_origin = full_buffer_capacity * (nb - 1);
       auto tail_rem = ip.length.value() - tail_origin;
       tail_num_blocks = ceil(tail_rem, ip.stride);
-      tail_terminal_block_len = (tail_rem - ip.origin) % ip.block_len;
-      if (tail_terminal_block_len == 0)
-        tail_terminal_block_len = ip.block_len;
+      auto terminal_rem = tail_rem % ip.stride;
+      if (ip.origin < terminal_rem) {
+        auto next = ip.origin + ip.block_len;
+        if (next >= terminal_rem)
+          tail_terminal_block_len = terminal_rem - ip.origin;
+        else
+          tail_terminal_block_len = ip.block_len;
+      } else {
+        tail_terminal_block_len = 0;
+      }
       uniform = tail_rem % ip.stride == 0;
       tb = std::make_tuple(tail_num_blocks, tail_terminal_block_len);
     } else {
@@ -1072,16 +1119,20 @@ Reader::init_fileview(
         if (ip->max_blocks) {
           num_blocks = ip->max_blocks.value();
         } else if (ip->buffer_capacity > 0) {
-          num_blocks = ip->buffer_capacity / ip->block_len;
-          len = ip->buffer_capacity;
+          assert(ip->buffer_capacity % ip->block_len == 0);
+          num_blocks = ip->buffer_capacity / block_len;
+          if (!ip->max_blocks || num_blocks < ip->max_blocks.value())
+            terminal_block_len = block_len;
         }
       } else if (ip->buffer_capacity > 0) {
         assert(ip->buffer_capacity % ip->block_len == 0);
-        if (!tail_fileview || !len) {
-          num_blocks = ip->buffer_capacity / ip->block_len;
-          if (!len)
-            len = ip->buffer_capacity;
-          terminal_block_len = ip->block_len;
+        if (!ip->max_blocks) {
+          num_blocks = ip->buffer_capacity / block_len;
+          terminal_block_len = block_len;
+        } else if (!tail_fileview) {
+          num_blocks = ip->buffer_capacity / block_len;
+          if (num_blocks < ip->max_blocks.value())
+            terminal_block_len = block_len;
         } else {
           std::tie(num_blocks, terminal_block_len) = tail_buffer.value();
         }
@@ -1151,7 +1202,7 @@ Reader::set_fileview(TraversalState& traversal_state, MPI_File file) const {
 
   MPI_File_set_view(
     file,
-    offset * sizeof(std::complex<float>),
+    offset * m_value_extent,
     MPI_CXX_FLOAT_COMPLEX,
     dt,
     m_datarep.c_str(),
@@ -1285,6 +1336,10 @@ Reader::read_arrays(
 
   MPI_Offset start;
   MPI_File_get_position(file, &start);
+  MPI_Offset disp;
+  MPI_File_get_byte_offset(file, start, &disp);
+  std::clog << "(" << m_rank << ") read " << count
+            << " arrays @" << disp << std::endl;
 
   if (!nonblocking) {
     MPI_Status status;

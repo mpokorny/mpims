@@ -206,6 +206,7 @@ public:
     , m_debug_log(other.m_debug_log)
     , m_traversal_state(other.m_traversal_state)
     , m_next_traversal_state(other.m_next_traversal_state)
+    , m_value_extent(other.m_value_extent)
     , m_ms_array(other.m_ms_array)
     , m_next_ms_array(other.m_next_ms_array) {
   }
@@ -225,6 +226,7 @@ public:
     , m_debug_log(std::move(other).m_debug_log)
     , m_traversal_state(std::move(other).m_traversal_state)
     , m_next_traversal_state(std::move(other).m_next_traversal_state)
+    , m_value_extent(std::move(other).m_value_extent)
     , m_ms_array(std::move(other).m_ms_array)
     , m_next_ms_array(std::move(other).m_next_ms_array) {
   }
@@ -256,6 +258,7 @@ public:
     m_debug_log = std::move(other).m_debug_log;
     m_traversal_state = std::move(other).m_traversal_state;
     m_next_traversal_state = std::move(other).m_next_traversal_state;
+    m_value_extent = std::move(other).m_value_extent;
     m_ms_array = std::move(other).m_ms_array;
     m_next_ms_array = std::move(other).m_next_ms_array;
     return *this;
@@ -581,7 +584,7 @@ protected:
     std::size_t>
   vector_datatype(
     std::size_t value_extent,
-    const std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
+    std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
     std::size_t dt_extent,
     std::size_t num_blocks,
     std::size_t block_len,
@@ -597,7 +600,7 @@ protected:
     bool>
   compound_datatype(
     std::size_t value_extent,
-    const std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
+    std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
     std::size_t dt_extent,
     std::size_t stride,
     std::size_t num_blocks,
@@ -700,6 +703,8 @@ private:
   TraversalState m_traversal_state;
 
   TraversalState m_next_traversal_state;
+
+  std::size_t m_value_extent;
 
   mutable MSArray m_ms_array;
 
