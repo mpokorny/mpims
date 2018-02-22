@@ -583,6 +583,7 @@ protected:
     std::unique_ptr<MPI_Datatype, DatatypeDeleter>,
     std::size_t>
   vector_datatype(
+    MPI_File file,
     std::size_t value_extent,
     std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
     std::size_t dt_extent,
@@ -599,6 +600,7 @@ protected:
     std::size_t,
     bool>
   compound_datatype(
+    MPI_File file,
     std::size_t value_extent,
     std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
     std::size_t dt_extent,

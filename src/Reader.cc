@@ -914,6 +914,7 @@ std::tuple<
   std::unique_ptr<MPI_Datatype, DatatypeDeleter>,
   std::size_t>
 Reader::vector_datatype(
+  MPI_File file,
   std::size_t value_extent,
   std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
   std::size_t dt_extent,
@@ -971,8 +972,9 @@ Reader::vector_datatype(
         *dt,
         dt1.get());
     }
-    MPI_Aint lb, extent;
-    MPI_Type_get_extent(*dt1, &lb, &extent); // FIXME: use MPI_File_get_type_extent
+    MPI_Aint extent;
+    MPI_Type_commit(dt1.get());
+    MPI_File_get_type_extent(file, *dt1, &extent);
     assert(static_cast<std::size_t>(extent) <= size);
     if (static_cast<std::size_t>(extent) != size){
       MPI_Type_create_resized(*dt1, 0, size, result_dt.get());
@@ -982,8 +984,9 @@ Reader::vector_datatype(
       result_dt = std::move(dt1);
     }
   } else {
-    MPI_Aint lb, extent;
-    MPI_Type_get_extent(*dt, &lb, &extent); // FIXME: use MPI_File_get_type_extent
+    MPI_Aint extent;
+    MPI_Type_commit(dt.get());
+    MPI_File_get_type_extent(file, *dt, &extent);
     assert(static_cast<std::size_t>(extent) <= size);
     if (static_cast<std::size_t>(extent) != size) {
       MPI_Type_create_resized(*dt, 0, size, result_dt.get());
@@ -1000,6 +1003,7 @@ Reader::vector_datatype(
 
 std::tuple<std::unique_ptr<MPI_Datatype, DatatypeDeleter>, std::size_t, bool>
 Reader::compound_datatype(
+  MPI_File file,
   std::size_t value_extent,
   std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
   std::size_t dt_extent,
@@ -1019,6 +1023,7 @@ Reader::compound_datatype(
   // create (blocked) vector of fileview_datatype elements
   std::tie(result_dt, result_dt_extent) =
     vector_datatype(
+      file,
       value_extent,
       dt,
       dt_extent,
@@ -1149,6 +1154,7 @@ Reader::init_fileview(
 
       std::tie(result, dt_extent, unbounded_dt_count) =
         compound_datatype(
+          file,
           value_extent,
           result,
           dt_extent,
