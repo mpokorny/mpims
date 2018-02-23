@@ -321,73 +321,80 @@ main(int argc, char* argv[]) {
           }
           close(fd);
         }
-        MPI_Bcast(
-          const_cast<char*>(path.c_str()),
-          path.size(),
-          MPI_CHAR,
-          0,
-          MPI_COMM_WORLD);
+        try {
+          MPI_Bcast(
+            const_cast<char*>(path.c_str()),
+            path.size(),
+            MPI_CHAR,
+            0,
+            MPI_COMM_WORLD);
 
-        vector<ColumnAxisBase<MSColumns> > ms_shape;
-        transform(
-          begin(msao),
-          end(msao),
-          back_inserter(ms_shape),
-          [&dimensions](auto& col) {
-            return ColumnAxisBase<MSColumns>(
-              static_cast<unsigned>(col),
-              dimensions[col]);
-          });
+          vector<ColumnAxisBase<MSColumns> > ms_shape;
+          transform(
+            begin(msao),
+            end(msao),
+            back_inserter(ms_shape),
+            [&dimensions](auto& col) {
+              return ColumnAxisBase<MSColumns>(
+                static_cast<unsigned>(col),
+                dimensions[col]);
+            });
 
-        {
-          auto writer =
-            Writer::begin(
-              path,
-              "external32",
-              MPI_COMM_WORLD,
-              MPI_INFO_NULL,
-              ms_shape,
-              tvo,
-              pgrid,
-              bs);
-          while (writer != Writer::end()) {
-            if (writer.buffer_length() > 0) {
-              MSArray array(writer.buffer_length());
-              write_buffer(array.buffer(), writer.indices());
-              *writer = move(array);
+          {
+            auto writer =
+              Writer::begin(
+                path,
+                "external32",
+                MPI_COMM_WORLD,
+                MPI_INFO_NULL,
+                ms_shape,
+                tvo,
+                pgrid,
+                bs);
+            while (writer != Writer::end()) {
+              if (writer.buffer_length() > 0) {
+                MSArray array(writer.buffer_length());
+                write_buffer(array.buffer(), writer.indices());
+                *writer = move(array);
+              }
+              ++writer;
             }
-            ++writer;
           }
-        }
+          MPI_Barrier(MPI_COMM_WORLD);
 
-        // read back
-        if (my_rank == 0) {
-          auto reader =
-            Reader::begin(
-              path,
-              "external32",
-              MPI_COMM_SELF,
-              MPI_INFO_NULL,
-              ms_shape,
-              read_order,
-              true,
-              read_pgrid,
-              max_buffer_size,
-              false);
-          while (reader != Reader::end()) {
-            auto& array = *reader;
-            if (array.buffer()) {
-              if (cb(array, output))
+          // read back
+          if (my_rank == 0) {
+            auto reader =
+              Reader::begin(
+                path,
+                "external32",
+                MPI_COMM_SELF,
+                MPI_INFO_NULL,
+                ms_shape,
+                read_order,
+                true,
+                read_pgrid,
+                max_buffer_size,
+                false);
+            while (reader != Reader::end()) {
+              auto& array = *reader;
+              if (array.buffer()) {
+                if (cb(array, output))
+                  ++reader;
+                else
+                  reader.interrupt();
+              }
+              else {
                 ++reader;
-              else
-                reader.interrupt();
+              }
             }
-            else {
-              ++reader;
-            }
+            cout << output.str();
+            remove(path.c_str());
           }
-          cout << output.str();
-          remove(path.c_str());
+        } catch (...) {
+          if (my_rank == 0)
+            remove(path.c_str());
+          throw;
         }
       }
     }
