@@ -186,6 +186,20 @@ Reader::wbegin(
     buffer_size,
     traversal_state);
 
+  MPI_Aint ve;
+  MPI_File_get_type_extent(file, MPI_CXX_FLOAT_COMPLEX, &ve);
+  std::size_t total_size = ve;
+  std::for_each(
+    std::begin(ms_shape),
+    std::end(ms_shape),
+    [&total_size](auto& ax) {
+      total_size *= ax.length().value();
+    });
+  MPI_Offset current_size;
+  MPI_File_get_size(file, &current_size);
+  if (static_cast<std::size_t>(current_size) < total_size)
+    MPI_File_set_size(file, total_size);
+
   MPI_File_set_atomicity(file, true); // TODO: not needed for write only
 
   return
