@@ -319,8 +319,7 @@ main(int argc, char* argv[]) {
                 mso,
                 pgrid,
                 bs,
-                false,
-                true);
+                false);
             while (reader != Reader::end()) {
               const MSArray& array = *reader;
               if (array.buffer()) {

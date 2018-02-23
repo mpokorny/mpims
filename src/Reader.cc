@@ -1366,10 +1366,6 @@ Reader::read_arrays(
 
   MPI_Offset start;
   MPI_File_get_position(file, &start);
-  MPI_Offset disp;
-  MPI_File_get_byte_offset(file, start, &disp);
-  std::clog << "(" << m_rank << ") read " << count
-            << " arrays @" << disp << std::endl;
 
   if (!nonblocking) {
     MPI_Status status;
