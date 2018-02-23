@@ -1162,6 +1162,9 @@ Reader::init_fileview(
         } else {
           std::tie(num_blocks, terminal_block_len) = tail_buffer.value();
         }
+      } else {
+        block_len = 1;
+        terminal_block_len = 1;
       }
       auto i0 = ms_indexer->offset_of_(index).value();
       ++index[ip->axis];
