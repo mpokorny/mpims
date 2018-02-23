@@ -52,6 +52,8 @@ Writer::next() {
   std::lock_guard<decltype(m_mtx)> lock(m_mtx);
   auto handles = m_reader.m_mpi_state.handles();
   std::lock_guard<decltype(*handles)> lck(*handles);
+  if (handles->comm == MPI_COMM_NULL)
+    return;
   if (m_reader.m_debug_log) {
     auto blocks = indices();
     std::clog << "(" << m_reader.m_rank << ") write ";

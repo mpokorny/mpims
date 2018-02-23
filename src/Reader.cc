@@ -52,24 +52,20 @@ Reader::Reader(
 
   MPI_Comm_rank(handles->comm, reinterpret_cast<int*>(&m_rank));
 
-  if (handles->file != MPI_FILE_NULL) {
-    MPI_Aint ve;
-    MPI_File_get_type_extent(handles->file, MPI_CXX_FLOAT_COMPLEX, &ve);
-    m_value_extent = static_cast<std::size_t>(ve);
-    if (!*m_inner_fileview_axis)
-      set_fileview(m_traversal_state, handles->file);
-    const IterParams* init_params = &(*m_iter_params)[0];
-    m_traversal_state.axis_iters.emplace(
-      std::shared_ptr<const IterParams>(m_iter_params, init_params),
-      !init_params->max_blocks || init_params->max_blocks > 0);
-    m_ms_array =
-      read_next_buffer(m_traversal_state, m_readahead, handles->file);
-    if (m_readahead)
-      start_next();
-  } else {
-    m_traversal_state.eof = true;
-  }
-
+  assert(handles->file != MPI_FILE_NULL);
+  MPI_Aint ve;
+  MPI_File_get_type_extent(handles->file, MPI_CXX_FLOAT_COMPLEX, &ve);
+  m_value_extent = static_cast<std::size_t>(ve);
+  if (!*m_inner_fileview_axis)
+    set_fileview(m_traversal_state, handles->file);
+  const IterParams* init_params = &(*m_iter_params)[0];
+  m_traversal_state.axis_iters.emplace(
+    std::shared_ptr<const IterParams>(m_iter_params, init_params),
+    !init_params->max_blocks || init_params->max_blocks > 0);
+  m_ms_array =
+    read_next_buffer(m_traversal_state, m_readahead, handles->file);
+  if (m_readahead)
+    start_next();
 }
 
 Reader::~Reader() {
@@ -186,21 +182,23 @@ Reader::wbegin(
     buffer_size,
     traversal_state);
 
-  MPI_Aint ve;
-  MPI_File_get_type_extent(file, MPI_CXX_FLOAT_COMPLEX, &ve);
-  std::size_t total_size = ve;
-  std::for_each(
-    std::begin(ms_shape),
-    std::end(ms_shape),
-    [&total_size](auto& ax) {
-      total_size *= ax.length().value();
-    });
-  MPI_Offset current_size;
-  MPI_File_get_size(file, &current_size);
-  if (static_cast<std::size_t>(current_size) < total_size)
-    MPI_File_set_size(file, total_size);
+  if (file != MPI_FILE_NULL) {
+    MPI_Aint ve;
+    MPI_File_get_type_extent(file, MPI_CXX_FLOAT_COMPLEX, &ve);
+    std::size_t total_size = ve;
+    std::for_each(
+      std::begin(ms_shape),
+      std::end(ms_shape),
+      [&total_size](auto& ax) {
+        total_size *= ax.length().value();
+      });
+    MPI_Offset current_size;
+    MPI_File_get_size(file, &current_size);
+    if (static_cast<std::size_t>(current_size) < total_size)
+      MPI_File_set_size(file, total_size);
 
-  MPI_File_set_atomicity(file, true); // TODO: not needed for write only
+    MPI_File_set_atomicity(file, true); // TODO: not needed for write only
+  }
 
   return
     Reader(
@@ -393,6 +391,7 @@ Reader::initialize(
           buffer_order->emplace_back(ip.axis);
       });
 
+  std::shared_ptr<MPI_Datatype> full_fileview_datatype, tail_fileview_datatype;
   file = MPI_FILE_NULL;
   priv_info = info;
   if (info != MPI_INFO_NULL)
@@ -426,29 +425,29 @@ Reader::initialize(
       MPI_CXX_FLOAT_COMPLEX,
       datarep.c_str(),
       MPI_INFO_NULL);
+
+    full_fileview_datatype =
+      init_fileview(
+        file,
+        ms_shape,
+        iter_params,
+        ms_indexer,
+        false,
+        rank,
+        debug_log);
+
+    tail_fileview_datatype =
+      init_fileview(
+        file,
+        ms_shape,
+        iter_params,
+        ms_indexer,
+        true,
+        rank,
+        debug_log);
+    if (!tail_fileview_datatype)
+      tail_fileview_datatype = full_fileview_datatype;
   }
-
-  std::shared_ptr<MPI_Datatype> full_fileview_datatype =
-    init_fileview(
-      file,
-      ms_shape,
-      iter_params,
-      ms_indexer,
-      false,
-      rank,
-      debug_log);
-
-  std::shared_ptr<MPI_Datatype> tail_fileview_datatype =
-    init_fileview(
-      file,
-      ms_shape,
-      iter_params,
-      ms_indexer,
-      true,
-      rank,
-      debug_log);
-  if (!tail_fileview_datatype)
-    tail_fileview_datatype = full_fileview_datatype;
 
   traversal_state =
     TraversalState(
@@ -473,7 +472,12 @@ Reader::initialize(
 void
 Reader::step(bool cont) {
   std::lock_guard<decltype(m_mtx)> lock(m_mtx);
-
+  {
+    auto handles = m_mpi_state.handles();
+    std::lock_guard<MPIHandles> lock1(*handles);
+    if (handles->comm == MPI_COMM_NULL)
+      return;
+  }
   if (at_end())
     throw std::out_of_range("Reader cannot be advanced: at end");
 
@@ -496,6 +500,11 @@ Reader::step(bool cont) {
 
 void
 Reader::start_next() {
+  auto handles = m_mpi_state.handles();
+  std::lock_guard<MPIHandles> lock1(*handles);
+  if (handles->comm == MPI_COMM_NULL)
+    return;
+
   m_next_traversal_state = m_traversal_state;
   advance_to_buffer_end(m_next_traversal_state);
 
@@ -503,8 +512,6 @@ Reader::start_next() {
     m_next_traversal_state.axis_iters.empty() || !m_ms_array.buffer();
   std::array<bool, 2>
     tests{ m_next_traversal_state.cont, m_next_traversal_state.eof };
-  auto handles = m_mpi_state.handles();
-  std::lock_guard<MPIHandles> lock1(*handles);
   MPI_Allreduce(
     MPI_IN_PLACE,
     tests.data(),
