@@ -1114,10 +1114,8 @@ Reader::init_fileview(
     [&](auto& ax) {
       auto ip = find_iter_params(iter_params, ax.id());
       index[ip->axis] = 0;
-      if (!ip->within_fileview && ip->buffer_capacity > 0) {
-        std::tie(tail_buffer, std::ignore) =
-          tail_buffer_blocks(*ip);
-      }
+      if (!ip->within_fileview && ip->buffer_capacity > 0)
+        std::tie(tail_buffer, std::ignore) = tail_buffer_blocks(*ip);
     });
 
   // build datatype for fileview
@@ -1142,14 +1140,7 @@ Reader::init_fileview(
       std::size_t block_len = ip->block_len;
       std::size_t terminal_block_len = ip->terminal_block_len;
       if (ip->within_fileview) {
-        if (ip->max_blocks) {
-          num_blocks = ip->max_blocks.value();
-        } else if (ip->buffer_capacity > 0) {
-          assert(ip->buffer_capacity % ip->block_len == 0);
-          num_blocks = ip->buffer_capacity / block_len;
-          if (!ip->max_blocks || num_blocks < ip->max_blocks.value())
-            terminal_block_len = block_len;
-        }
+        num_blocks = ip->max_blocks.value();
       } else if (ip->buffer_capacity > 0) {
         assert(ip->buffer_capacity % ip->block_len == 0);
         if (!ip->max_blocks) {
