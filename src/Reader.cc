@@ -414,6 +414,10 @@ Reader::initialize(
         std::clog << "No ROMIO filesystem type" << std::endl;
       MPI_Info_free(&info_used);
     }
+
+    if ((amode & MPI_MODE_RDWR) != 0)
+      MPI_File_set_atomicity(file, true);
+
     // set the view here in order to associate a data representation with the
     // file handle
     MPI_File_set_view(
