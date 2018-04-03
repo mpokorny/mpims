@@ -62,6 +62,7 @@ public:
     TraversalState(
       MPI_Comm comm,
       const std::shared_ptr<const std::vector<IterParams> >& iter_params_,
+      bool in_tail_,
       MSColumns& outer_full_array_axis_,
       const std::shared_ptr<const MPI_Datatype>& full_buffer_datatype,
       unsigned full_buffer_dt_count,
@@ -75,7 +76,7 @@ public:
       , block_maps(make_index_block_sequences(iter_params_))
       , count(0)
       , max_count(0)
-      , in_tail(false)
+      , in_tail(in_tail_)
       , outer_full_array_axis(outer_full_array_axis_)
       , m_full_buffer_datatype(full_buffer_datatype)
       , m_full_buffer_dt_count(full_buffer_dt_count)

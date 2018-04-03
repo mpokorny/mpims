@@ -331,7 +331,7 @@ Reader::initialize(
         << "read " << array_read->buffer_capacity
         << " arrays at " << mscol_nickname(array_read->axis)
         << std::endl;
-    if (inner_fileview_axis->has_value())
+    if (*inner_fileview_axis)
       out << "(" << rank << ") "
           << "m_inner_fileview_axis "
           << mscol_nickname(inner_fileview_axis->value())
@@ -455,6 +455,7 @@ Reader::initialize(
     TraversalState(
       reduced_comm,
       iter_params,
+      !*inner_fileview_axis,
       outer_full_array_axis,
       full_buffer_datatype,
       full_buffer_dt_count,
