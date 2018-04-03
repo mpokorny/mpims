@@ -34,6 +34,8 @@ class Reader
 
 public:
 
+  // Error to indicate attempt to create an array with an unbounded, internal,
+  // that is, any but the outermost, axis
   class UnboundedArrayError
     : std::runtime_error {
   public:
@@ -45,7 +47,11 @@ public:
   class IterParams;
   class AxisIter;
 
-
+  // TraversalState maintains the state used to traverse the MS in the order
+  // provided by the client. If one considers MS traversal as stack of
+  // traversals along every axis with recursion to get to the next axis, this
+  // structure contains the information needed for traversal after flattening
+  // such a recursive iteration into a single loop.
   struct TraversalState {
 
     TraversalState()
@@ -79,8 +85,10 @@ public:
       , m_tail_fileview_datatype(tail_fileview_datatype) {
     }
 
+    //EOF condition flag
     bool eof;
 
+    // continuation condition flag (to allow breaking out from iteration)
     bool cont;
 
     std::shared_ptr<const std::vector<IterParams> > iter_params;
@@ -90,14 +98,21 @@ public:
 
     ArrayIndexer<MSColumns>::index data_index;
 
+    // stack of AxisIters to maintain axis iteration indexes
     std::stack<AxisIter> axis_iters;
 
     int count;
 
     int max_count;
 
+    // Is traversal currently in a tail fileview? A tail fileview differs
+    // somewhat from a non-tail fileview when the iteration at the outermost
+    // fileview axis doesn't fit into the same pattern at the end of the axis as
+    // all the previous fileviews. This can happen when the distribution of data
+    // on an axis to processes is uneven at the end of an axis.
     bool in_tail;
 
+    // the outermost axis at which data can fully fit into a buffer
     MSColumns outer_full_array_axis;
 
     std::tuple<std::shared_ptr<const MPI_Datatype>, unsigned>
@@ -266,10 +281,22 @@ public:
 
   ~Reader();
 
+  // IterParams holds the information for the iteration over a single axis, as
+  // well as context within the scope of iteration over the entire MS together
+  // given a user buffer size. Most of the values in this structure are used to
+  // describe the iteration over an axis for a particular process.
   struct IterParams {
     MSColumns axis;
-    bool fully_in_array, within_fileview;
-    std::size_t buffer_capacity, array_length;
+    // can a buffer hold the data for the full axis given iteration pattern?
+    bool fully_in_array;
+    // is iteration across this axis done without changing the fileview?
+    bool within_fileview;
+    // number of axis values in iteration for which the entire array comprising
+    // data from all deeper axes can be copied into a single buffer
+    std::size_t buffer_capacity;
+    // number of data values in array comprising data from all deeper axes
+    std::size_t array_length;
+    // remainder are values describing iteration pattern
     std::size_t origin, stride, block_len,
       terminal_block_len, max_terminal_block_len;
     std::optional<std::size_t> length, max_blocks;
@@ -312,6 +339,8 @@ public:
     }
   };
 
+  // AxisIter contains the state of the iteration along an axis. It follows the
+  // iteration pattern defined for an axis by an IterParams value.
   class AxisIter {
   public:
 

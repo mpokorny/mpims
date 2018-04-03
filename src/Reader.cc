@@ -799,6 +799,8 @@ Reader::init_traversal_partitions(
   }
 }
 
+// compute datatype for a buffer, assuming data read from file is in MS order
+// (although a fileview will have narrowed the data being read)
 std::tuple<std::unique_ptr<MPI_Datatype, DatatypeDeleter>, unsigned>
 Reader::init_buffer_datatype(
   const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
@@ -816,6 +818,9 @@ Reader::init_buffer_datatype(
       index[ip.axis] = 0;
     });
 
+  // the data ordering in the buffer can be different from that in which the
+  // data elements are read
+  //
   // order iter_params to establish the axis ordering in buffer
   std::vector<const IterParams*> reordered_ips;
   if (ms_buffer_order)
@@ -845,11 +850,15 @@ Reader::init_buffer_datatype(
     [&](auto& ip) {
       auto accessible_length = ip->accessible_length();
       if (ip->fully_in_array) {
+        // all data on this axis fit into a single buffer
         buffer.emplace_back(
           static_cast<unsigned>(ip->axis),
           accessible_length.value());
       } else if (ip->buffer_capacity > 0) {
+        // not all of the data on this axis fit into a single buffer
         buffer_capacity = ip->buffer_capacity;
+        // when fileview is a tail fileview, the buffer datatype should
+        // accommodate to create a non-sparse array
         tail_buffer_capacity = (
           accessible_length
           ? (accessible_length.value() % ip->buffer_capacity)
@@ -871,6 +880,8 @@ Reader::init_buffer_datatype(
   auto buffer_indexer =
     ArrayIndexer<MSColumns>::of(ArrayOrder::row_major, buffer);
 
+  // build up the buffer datatype by starting at the innermost level of the MS
+  // ordering and working outwards
   auto result_dt = datatype(MPI_CXX_FLOAT_COMPLEX);
   unsigned result_dt_count = 1;
   std::for_each(
@@ -910,6 +921,7 @@ Reader::init_buffer_datatype(
         } else {
           auto dt = std::move(result_dt);
           result_dt = datatype();
+          // use hvector to allow on-the-fly transpositions
           MPI_Type_create_hvector(
             count,
             result_dt_count,
@@ -1331,7 +1343,7 @@ Reader::read_arrays(
       std::end(blocks),
       [&sep0,&oss](auto& ibs) {
         oss << sep0
-                  << mscol_nickname(ibs.m_axis) << ": [";
+            << mscol_nickname(ibs.m_axis) << ": [";
         sep0 = "; ";
         const char *sep1 = "";
         std::for_each(
