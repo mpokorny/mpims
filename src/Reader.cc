@@ -1076,16 +1076,16 @@ Reader::compound_datatype(
 std::tuple<std::optional<std::tuple<std::size_t, std::size_t> >, bool>
 Reader::tail_buffer_blocks(const IterParams& ip) {
   std::optional<std::tuple<std::size_t, std::size_t> > tb;
-  std::size_t tail_num_blocks, tail_terminal_block_len;
   bool uniform;
   if (!ip.fully_in_array) {
     if (ip.length) {
+      std::size_t tail_num_blocks, tail_terminal_block_len;
       std::size_t capacity = std::max(ip.buffer_capacity, 1uL);
       auto nr = ip.stride / ip.block_len;
       auto full_buffer_capacity = capacity * nr;
-      auto nb = ceil(ip.length.value(), full_buffer_capacity);
-      auto tail_origin = full_buffer_capacity * (nb - 1);
-      auto tail_rem = ip.length.value() - tail_origin;
+      auto tail_rem = ip.length.value() % full_buffer_capacity;
+      if (tail_rem == 0)
+        tail_rem = full_buffer_capacity;
       tail_num_blocks = ceil(tail_rem, ip.stride);
       auto terminal_rem = tail_rem % ip.stride;
       if (ip.origin < terminal_rem) {
