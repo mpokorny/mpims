@@ -977,37 +977,51 @@ Reader::vector_datatype(
   }
   auto result_dt = datatype();
   MPI_Aint result_dt_extent = len * dt_extent * value_extent;
-  auto nb = num_blocks - ((terminal_block_len == 0) ? 1 : 0);
-  if (nb * block_len > 1 || offset > 0) {
-    auto dt1 = datatype();
-    auto blocklengths = std::make_unique<int[]>(nb);
-    auto displacements = std::make_unique<int[]>(nb);
-    for (std::size_t i = 0; i < nb; ++i) {
-      blocklengths[i] = block_len;
-      displacements[i] = offset + i * stride;
-    }
-    if (terminal_block_len > 0)
-      blocklengths[nb - 1] = terminal_block_len;
-    if (debug_log)
-      oss << "; indexed " << nb
-          << "," << offset
-          << "," << stride
-          << "," << block_len
-          << "," << terminal_block_len;
-    MPI_Type_indexed(
-      nb,
-      blocklengths.get(),
-      displacements.get(),
-      *dt,
-      dt1.get());
-    MPI_Type_create_resized(*dt1, 0, result_dt_extent, result_dt.get());
-    if (debug_log)
-      oss << "; resize " << result_dt_extent;
-  } else {
-    MPI_Type_create_resized(*dt, 0, result_dt_extent, result_dt.get());
-    if (debug_log)
-      oss << "; resize only " << result_dt_extent;
+  auto nb = num_blocks;
+  if (terminal_block_len == 0) {
+    --nb;
+    terminal_block_len = block_len;
   }
+  if (nb * block_len > 1 || offset > 0) {
+    if (block_len == terminal_block_len && offset == 0) {
+      if (block_len == stride) {
+        if (debug_log)
+          oss << "; contiguous " << nb * block_len;
+        MPI_Type_contiguous(nb * block_len, *dt, result_dt.get());
+      } else {
+        if (debug_log)
+          oss << "; vector " << nb
+              << "," << block_len
+              << "," << stride;
+        MPI_Type_vector(nb, block_len, stride, *dt, result_dt.get());
+      }
+    } else {
+      auto blocklengths = std::make_unique<int[]>(nb);
+      auto displacements = std::make_unique<int[]>(nb);
+      for (std::size_t i = 0; i < nb; ++i) {
+        blocklengths[i] = block_len;
+        displacements[i] = offset + i * stride;
+      }
+      blocklengths[nb - 1] = terminal_block_len;
+      if (debug_log)
+        oss << "; indexed " << nb
+            << "," << block_len
+            << "," << terminal_block_len
+            << "," << offset
+            << "," << stride;
+      MPI_Type_indexed(
+        nb,
+        blocklengths.get(),
+        displacements.get(),
+        *dt,
+        result_dt.get());
+    }
+    dt = std::move(result_dt);
+    result_dt = datatype();
+  }
+  MPI_Type_create_resized(*dt, 0, result_dt_extent, result_dt.get());
+  if (debug_log)
+    oss << "; resize " << result_dt_extent;
   if (debug_log) {
     oss << std::endl;
     std::clog << oss.str();
@@ -1198,8 +1212,8 @@ Reader::set_fileview(
 
   // assume that m_mtx and m_mpi_state.handles() are locked
 
-  // round down to nearest stride boundary those indexes that are at or below
-  // the inner fileview axis
+  // round down to nearest stride boundary those indexes that are within the
+  // fileview
   ArrayIndexer<MSColumns>::index data_index = traversal_state.data_index;
   std::for_each(
     std::crbegin(*m_iter_params),
