@@ -613,10 +613,10 @@ protected:
     std::unique_ptr<MPI_Datatype, DatatypeDeleter>,
     std::size_t>
   vector_datatype(
-    MPI_File file,
-    std::size_t value_extent,
+    MPI_Aint value_extent,
     std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
     std::size_t dt_extent,
+    std::size_t offset,
     std::size_t num_blocks,
     std::size_t block_len,
     std::size_t terminal_block_len,
@@ -630,10 +630,10 @@ protected:
     std::size_t,
     bool>
   compound_datatype(
-    MPI_File file,
-    std::size_t value_extent,
+    MPI_Aint value_extent,
     std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
     std::size_t dt_extent,
+    std::size_t offset,
     std::size_t stride,
     std::size_t num_blocks,
     std::size_t block_len,
@@ -667,7 +667,9 @@ protected:
     MPI_File file) const;
 
   void
-  set_fileview(TraversalState& traversal_state, MPI_File file) const;
+  set_fileview(
+    TraversalState& traversal_state,
+    MPI_File file) const;
 
   void
   advance_to_next_buffer(
@@ -690,7 +692,7 @@ protected:
 
   static const IterParams*
   find_iter_params(
-    const std::shared_ptr<std::vector<IterParams> >& iter_params,
+    const std::shared_ptr<const std::vector<IterParams> >& iter_params,
     MSColumns col) {
 
     auto ip =
