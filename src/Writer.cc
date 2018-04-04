@@ -101,12 +101,12 @@ Writer::next() {
   if (m_array)
     m_reader.m_ms_array.swap(m_array.value());
   m_array = std::nullopt;
-  m_reader.next();
+  m_reader.next(false);
 }
 
 void
 Writer::interrupt() {
-  m_reader.step(false);
+  m_reader.interrupt();
 }
 
 void

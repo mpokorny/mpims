@@ -484,13 +484,14 @@ public:
   at_end() const;
 
   void
-  next() {
-    step(true);
+  next(bool do_read=true) {
+    // FIXME: do_read, and all its descendents are a bit of a hack
+    step(true, do_read);
   }
 
   void
   interrupt() {
-    step(false);
+    step(false, false);
   }
 
   const std::vector<IndexBlockSequence<MSColumns> >&
@@ -570,10 +571,10 @@ protected:
     TraversalState& traversal_state);
 
   void
-  step(bool cont);
+  step(bool cont, bool do_read);
 
   void
-  start_next();
+  start_next(bool do_read);
 
   const MSArray&
   getv() const {
@@ -661,6 +662,7 @@ protected:
 
   MSArray
   read_arrays(
+    bool do_read,
     TraversalState& traversal_state,
     bool nonblocking,
     std::vector<IndexBlockSequence<MSColumns> >& blocks,
@@ -681,6 +683,7 @@ protected:
 
   MSArray
   read_next_buffer(
+    bool do_read,
     TraversalState& TraversalState,
     bool nonblocking,
     MPI_File file) const;
