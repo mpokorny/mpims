@@ -710,8 +710,7 @@ Reader::init_traversal_partitions(
       } else {
         throw std::runtime_error("maximum buffer size too small");
       }
-    }
-    if (len > 0) {
+    } else { /* len > 0 */
       start_buffer->buffer_capacity = len;
       if (start_buffer != iter_params->rbegin()) {
         // since we were able to fit at least one value on this axis, the
