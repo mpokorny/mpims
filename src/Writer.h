@@ -13,9 +13,8 @@
 
 namespace mpims {
 
-class Writer {
-
-// TODO: add  public std::iterator<std::forward_iterator_tag, const MSArray, std::size_t> {
+class Writer
+  : public std::iterator<std::forward_iterator_tag, const MSArray, std::size_t> {
 
 public:
   Writer() {
