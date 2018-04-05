@@ -182,22 +182,6 @@ Reader::wbegin(
     buffer_size,
     traversal_state);
 
-  // if (file != MPI_FILE_NULL) {
-  //   MPI_Aint ve;
-  //   MPI_File_get_type_extent(file, MPI_CXX_FLOAT_COMPLEX, &ve);
-  //   std::size_t total_size = ve;
-  //   std::for_each(
-  //     std::begin(ms_shape),
-  //     std::end(ms_shape),
-  //     [&total_size](auto& ax) {
-  //       total_size *= ax.length().value();
-  //     });
-  //   MPI_Offset current_size;
-  //   MPI_File_get_size(file, &current_size);
-  //   if (static_cast<std::size_t>(current_size) < total_size)
-  //     MPI_File_set_size(file, total_size);
-  // }
-
   return
     Reader(
       MPIState(reduced_comm, priv_info, file, path),
@@ -681,25 +665,41 @@ Reader::init_traversal_partitions(
   std::shared_ptr<std::optional<MSColumns> >& inner_fileview_axis,
   int rank,
   bool debug_log) {
-  // compute shape of largest array with full-length dimensions (for this rank)
-  // that buffer of requested size can contain, building up from innermost
-  // traversal axis...this is the full array partition, as it defines the axis
-  // at which the data occupies a single array in memory
+
+  // Compute how much of the column data can fit into a buffer of the given
+  // size. To do this, we move upwards from the innermost traversal axis, adding
+  // the full axis when the buffer is large enough -- these axes are marked by
+  // setting the fully_in_array member of the corresponding IterParams value to
+  // true. When the buffer is not large enough for the full axis, we must
+  // determine exactly how many values along that axis can fit into the
+  // remaining space of the buffer -- these axes are marked by setting the
+  // buffer_capacity member of the corresponding IterParams value to the number
+  // of values (where each value on this axis must hold an array of values
+  // including all prior axes) that can be accommodated into the buffer.
   std::size_t max_buffer_length = buffer_size / sizeof(std::complex<float>);
   if (max_buffer_length == 0)
     throw std::runtime_error("maximum buffer size too small");
+  // array_length is the total size of data in all prior axes
   std::size_t array_length = 1;
   auto start_buffer = iter_params->rbegin();
   while (start_buffer != iter_params->rend()) {
     start_buffer->array_length = array_length;
+    // len is the number of values along this axis that can be fit into the
+    // remaining buffer space, with a granularity of the block_len of this axis
     std::size_t len =
       std::min(
         (max_buffer_length / start_buffer->array_length)
         / start_buffer->block_len,
         start_buffer->max_blocks.value_or(1))
       * start_buffer->block_len;
+    // full_len is the most values any rank will need on this axis
     std::optional<std::size_t> full_len = start_buffer->max_accessible_length();
     if (len == 0) {
+      // unable to fit even a single block of values along this axis, so we go
+      // back to the previous axis, then clear fully_in_array and set
+      // buffer_capacity in order that the outermost axis that is at least
+      // partially in a single buffer always has a strictly positive
+      // buffer_capacity
       if (start_buffer != iter_params->rbegin()) {
         --start_buffer;
         // assert(start_buffer->max_blocks);
@@ -714,16 +714,29 @@ Reader::init_traversal_partitions(
     if (len > 0) {
       start_buffer->buffer_capacity = len;
       if (start_buffer != iter_params->rbegin()) {
+        // since we were able to fit at least one value on this axis, the
+        // previous axis is necessarily entirely within the buffer
         auto prev_buffer = start_buffer - 1;
         prev_buffer->fully_in_array = true;
         prev_buffer->buffer_capacity = 0;
       }
     }
+    // we're done whenever the number of values in the buffer on this axis is
+    // less than full_len (note that we use full_len, and not
+    // start_buffer->accessible_length(), because the latter is not constant
+    // across ranks, and the outcome of this method needs to be invariant across
+    // ranks)
     if (!full_len || len < full_len.value())
       break;
+    // increase the array size by a factor of full_len
     array_length *= full_len.value();
     ++start_buffer;
   }
+  // when all axes can fit into the buffer, we need to adjust the
+  // buffer_capacity and fully_in_array values of the top-level IterParams (in
+  // order to maintain the property that the outermost axis that can at least
+  // partially fit into the buffer has a positive buffer_capacity value, and
+  // a false fully_in_array value)
   if (start_buffer == iter_params->rend()) {
     --start_buffer;
     // assert(start_buffer->max_blocks);
@@ -772,17 +785,32 @@ Reader::init_traversal_partitions(
     }
   }
 
-  // determine the axis at which the traversal order is incompatible with the MS
+  // Determine the axis at which the traversal order is incompatible with the MS
   // order, with the knowledge that out of order traversal is OK if the
-  // reordering can be done in memory (that, is within the partial array
-  // partition)...this is the fileview partition, as it defines the axis at
-  // which the fileview must be created
+  // reordering can be done in memory (that, is within a single buffer). This
+  // will define the axis on which the fileview needs to be set. Note that the
+  // fileview may vary with index when the blocking and data distribution result
+  // in a non-uniform final block (i.e, when the buffer_capacity is large enough
+  // that it covers the terminal block, and terminal_block_len is different from
+  // block_len on at least one rank). This potentially oddball fileview is
+  // termed a "tail fileview", since it only occurs at the tail end of the axis
+  // at which the fileview is set.
   {
-    bool ooo = false;
+    bool ooo = false; /* out-of-order flag */
     auto ip = iter_params->rbegin();
     while (ip != iter_params->rend()) {
       if (!*inner_fileview_axis) {
         ooo = ooo || out_of_order.count(ip->axis) > 0;
+        // inner_fileview_axis is set if we've reached the out of order
+        // condition and the entire axis is not held in a single buffer, or the
+        // axis at which buffer_capacity is set has a non-uniform final block
+        //
+        // TODO: simplify this -- I don't believe that the second condition
+        // (regarding the tail fileview) is actually necessary, but simply
+        // removing it creates a situation in which some ranks can attempt more
+        // reads than others, which hangs the program. Removing that condition
+        // will require some work on the reading code, so that all ranks take
+        // part in all reads, whether or not they need any data.
         if ((ooo
              && !(ip->fully_in_array
                   || (ip->max_blocks
@@ -878,7 +906,8 @@ Reader::init_buffer_datatype(
     ArrayIndexer<MSColumns>::of(ArrayOrder::row_major, buffer);
 
   // build up the buffer datatype by starting at the innermost level of the MS
-  // ordering and working outwards
+  // ordering and working outwards; we are creating a possibly transposed array,
+  // which requires that we use the hvector datatype
   auto result_dt = datatype(MPI_CXX_FLOAT_COMPLEX);
   unsigned result_dt_count = 1;
   std::for_each(
