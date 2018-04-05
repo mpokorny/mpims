@@ -803,18 +803,12 @@ Reader::init_traversal_partitions(
         // inner_fileview_axis is set if we've reached the out of order
         // condition and the entire axis is not held in a single buffer, or the
         // axis at which buffer_capacity is set has a non-uniform final block
-        //
-        // TODO: simplify this -- I don't believe that the second condition
-        // (regarding the tail fileview) is actually necessary, but simply
-        // removing it creates a situation in which some ranks can attempt more
-        // reads than others, which hangs the program. Removing that condition
-        // will require some work on the reading code, so that all ranks take
-        // part in all reads, whether or not they need any data.
         if ((ooo
              && !(ip->fully_in_array
                   || (ip->max_blocks
                       && (ip->buffer_capacity >= ip->max_accessible_length()))))
-            || !std::get<1>(tail_buffer_blocks(*ip)))
+            || (ip->buffer_capacity > 0
+                && ip->buffer_capacity < ip->max_accessible_length()))
           *inner_fileview_axis = ip->axis;
       }
       ip->within_fileview = !inner_fileview_axis->has_value();
@@ -1088,10 +1082,9 @@ Reader::compound_datatype(
     std::make_tuple(std::move(result_dt), result_dt_extent, !len.has_value());
 }
 
-std::tuple<std::optional<std::tuple<std::size_t, std::size_t> >, bool>
+std::optional<std::tuple<std::size_t, std::size_t> >
 Reader::tail_buffer_blocks(const IterParams& ip) {
-  std::optional<std::tuple<std::size_t, std::size_t> > tb;
-  bool uniform;
+  std::optional<std::tuple<std::size_t, std::size_t> > result;
   if (!ip.fully_in_array) {
     if (ip.length) {
       std::size_t tail_num_blocks, tail_terminal_block_len;
@@ -1112,17 +1105,14 @@ Reader::tail_buffer_blocks(const IterParams& ip) {
       } else {
         tail_terminal_block_len = 0;
       }
-      uniform = tail_rem % ip.stride == 0;
-      tb = std::make_tuple(tail_num_blocks, tail_terminal_block_len);
+      result = std::make_tuple(tail_num_blocks, tail_terminal_block_len);
     } else {
-      tb = std::nullopt;
-      uniform = true;
+      result = std::nullopt;
     }
   } else {
-    tb = std::make_tuple(0, 0);
-    uniform = true;
+    result = std::make_tuple(0, 0);
   }
-  return std::make_tuple(tb, uniform);
+  return result;
 }
 
 std::unique_ptr<MPI_Datatype, DatatypeDeleter>
@@ -1144,7 +1134,7 @@ Reader::init_fileview(
       auto ip = find_iter_params(iter_params, ax.id());
       index[ip->axis] = 0;
       if (!ip->within_fileview && ip->buffer_capacity > 0)
-        std::tie(tail_buffer, std::ignore) = tail_buffer_blocks(*ip);
+        tail_buffer = tail_buffer_blocks(*ip);
     });
 
   // build datatype for fileview
