@@ -1133,7 +1133,7 @@ Reader::init_fileview(
     [&](auto& ax) {
       auto ip = find_iter_params(iter_params, ax.id());
       index[ip->axis] = 0;
-      if (!ip->within_fileview && ip->buffer_capacity > 0)
+      if (ip->buffer_capacity > 0)
         tail_buffer = tail_buffer_blocks(*ip);
     });
 
