@@ -36,7 +36,6 @@ Writer::begin(
       msao == traversal_order,
       pgrid,
       max_buffer_size,
-      false /* readahead */,
       debug_log));
 }
 

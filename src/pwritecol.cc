@@ -174,7 +174,6 @@ parse_options(
   std::size_t& buffer_size,
   std::string& ms_path,
   std::string& datarep,
-  bool& readahead,
   bool& debug_log) {
 
   int opt;
@@ -183,7 +182,6 @@ parse_options(
     {"order", required_argument, &opt, 'o'},
     {"grid", required_argument, &opt, 'g'},
     {"buffer", required_argument, &opt, 'b'},
-    // {"readahead", no_argument, nullptr, 'r'},
     {"datarep", required_argument, &opt, 'd'},
     {"verbose", no_argument, nullptr, 'v'},
     {"help", optional_argument, nullptr, 'h'}
@@ -195,13 +193,11 @@ parse_options(
         << "  (--order |-o) <traversal-order>" << std::endl
         << "  (--buffer | -b) <buffer-size>" << std::endl
         << "  [(--grid |-g) <distribution>]" << std::endl
-        // << "  [(--readahead | -r)]" << std::endl
         << "  [(--verbose | -v)]" << std::endl
         << "  [(--datarep | -d) <datarep>]" << std::endl
         << "  <ms-data-column-file>" << std::endl;
 
   debug_log = false;
-  readahead = false;
   bool got_shape = false, got_order = false, got_buffer = false;
   ms_path = "";
   datarep = "native";
@@ -271,10 +267,6 @@ parse_options(
       break;
     }
 
-    case 'r':
-      readahead = true;
-      break;
-
     case 'v':
       debug_log = true;
       break;
@@ -317,7 +309,6 @@ write_all(
   std::size_t buffer_size,
   std::string ms_path,
   std::string datarep,
-  // bool readahead,
   bool debug_log) {
 
   unsigned result = 0;
@@ -415,7 +406,6 @@ main(int argc, char *argv[]) {
   std::size_t max_buffer_size;
   std::string ms_path;
   std::string datarep;
-  bool readahead;
   bool debug_log;
 
   bool options_ok =
@@ -430,7 +420,6 @@ main(int argc, char *argv[]) {
       max_buffer_size,
       ms_path,
       datarep,
-      readahead,
       debug_log);
 
   if (options_ok) {
@@ -451,7 +440,6 @@ main(int argc, char *argv[]) {
               max_buffer_size,
               ms_path,
               datarep,
-              // readahead,
               debug_log);
           MPI_Barrier(MPI_COMM_WORLD);
           return n;

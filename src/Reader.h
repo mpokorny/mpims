@@ -544,7 +544,6 @@ protected:
     bool ms_buffer_order,
     std::unordered_map<MSColumns, DataDistribution>& pgrid,
     std::size_t max_buffer_size,
-    bool readahead,
     bool debug_log = false);
 
   static void

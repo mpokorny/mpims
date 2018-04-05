@@ -147,7 +147,6 @@ Reader::wbegin(
   bool ms_buffer_order,
   std::unordered_map<MSColumns, DataDistribution>& pgrid,
   std::size_t max_buffer_size,
-  bool readahead,
   bool debug_log) {
 
   MPI_Comm reduced_comm;
@@ -192,7 +191,7 @@ Reader::wbegin(
       inner_fileview_axis,
       ms_indexer,
       buffer_size,
-      readahead,
+      false,
       std::move(traversal_state),
       debug_log);
 }
