@@ -318,6 +318,7 @@ write_all(
       Writer::begin(
         ms_path,
         datarep,
+        AMode::WriteOnly,
         MPI_COMM_WORLD,
         MPI_INFO_NULL,
         ms_shape,

@@ -9,6 +9,7 @@ Writer
 Writer::begin(
   const std::string& path,
   const std::string& datarep,
+  AMode access_mode,
   MPI_Comm comm,
   MPI_Info info,
   const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
@@ -29,6 +30,7 @@ Writer::begin(
     Reader::wbegin(
       path,
       datarep,
+      access_mode,
       comm,
       info,
       ms_shape,
@@ -43,6 +45,7 @@ void
 Writer::swap(Writer& other) {
   using std::swap;
   swap(m_reader, other.m_reader);
+  swap(m_access_mode, other.m_access_mode);
   swap(m_array, other.m_array);
 }
 

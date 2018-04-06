@@ -32,7 +32,7 @@ public:
   }
 
   bool
-  is_unbounded() const {
+  is_indeterminate() const {
     return !m_length;
   }
 

@@ -17,20 +17,24 @@ class Writer
   : public std::iterator<std::forward_iterator_tag, const MSArray, std::size_t> {
 
 public:
-  Writer() {
+  Writer()
+    : m_access_mode(AMode::WriteOnly) {
   }
 
   Writer(Reader&& reader)
-    : m_reader(std::move(reader)) {
+    : m_reader(std::move(reader))
+    , m_access_mode(AMode::ReadWrite) {
   }
 
   Writer(const Writer& other)
     : m_reader(other.m_reader)
+    , m_access_mode(other.m_access_mode)
     , m_array(other.m_array) {
   }
 
   Writer(Writer&& other)
     : m_reader(std::move(other).m_reader)
+    , m_access_mode(std::move(other).m_access_mode)
     , m_array(std::move(other).m_array) {
   }
 
@@ -53,6 +57,7 @@ public:
   operator=(Writer&& other) {
     std::lock_guard<decltype(m_mtx)> lock(m_mtx);
     m_reader = std::move(other).m_reader;
+    m_access_mode = other.m_access_mode;
     m_array = std::move(other).m_array;
     return *this;
   }
@@ -77,6 +82,7 @@ public:
     return (
       buffer_length() == other.buffer_length()
       && m_reader == other.m_reader
+      && m_access_mode == other.m_access_mode
       && m_array == other.m_array);
   }
 
@@ -151,6 +157,7 @@ public:
   begin(
     const std::string& path,
     const std::string& datarep,
+    AMode access_mode,
     MPI_Comm comm,
     MPI_Info info,
     const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
@@ -168,6 +175,8 @@ protected:
   };
 
   Reader m_reader;
+
+  AMode m_access_mode;
 
   std::optional<MSArray> m_array;
 

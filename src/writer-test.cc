@@ -4,6 +4,7 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <stack>
 #include <utility>
 #include <vector>
 
@@ -283,12 +284,12 @@ main(int argc, char* argv[]) {
     npol * nch * sizeof(complex<float>)
   };
 
-  // unordered_map<MSColumns, DataDistribution> pgrid;
+  unordered_map<MSColumns, DataDistribution> pgrid;
 
-  unordered_map<MSColumns, DataDistribution> pgrid = {
-    {MSColumns::spectral_window, DataDistribution { 2, 1 } },
-    {MSColumns::channel, DataDistribution { 2, 3 } }
-  };
+  // unordered_map<MSColumns, DataDistribution> pgrid = {
+  //   {MSColumns::spectral_window, DataDistribution { 2, 1 } },
+  //   {MSColumns::channel, DataDistribution { 2, 3 } }
+  // };
 
   unordered_map<MSColumns, DataDistribution> read_pgrid;
 
@@ -300,6 +301,21 @@ main(int argc, char* argv[]) {
   for (auto& msao : ms_axis_orders) {
     for (auto& bs : buffer_sizes) {
       for (auto& tvo : ms_axis_orders) {
+
+        vector<ColumnAxisBase<MSColumns> > ms_shape;
+        transform(
+          begin(msao),
+          end(msao),
+          back_inserter(ms_shape),
+          [&dimensions](auto& col) {
+            return ColumnAxisBase<MSColumns>(
+              static_cast<unsigned>(col),
+              dimensions[col]);
+          });
+        MSColumns ms_top = ms_shape[0].id();
+        std::size_t ms_top_len = 0;
+        ms_shape[0] = ColumnAxisBase<MSColumns>(static_cast<unsigned>(ms_top));
+
         ostringstream output;
         output << "========= ms order "
                << colnames(msao)
@@ -329,22 +345,12 @@ main(int argc, char* argv[]) {
             0,
             MPI_COMM_WORLD);
 
-          vector<ColumnAxisBase<MSColumns> > ms_shape;
-          transform(
-            begin(msao),
-            end(msao),
-            back_inserter(ms_shape),
-            [&dimensions](auto& col) {
-              return ColumnAxisBase<MSColumns>(
-                static_cast<unsigned>(col),
-                dimensions[col]);
-            });
-
           {
             auto writer =
               Writer::begin(
                 path,
                 "external32",
+                AMode::WriteOnly,
                 MPI_COMM_WORLD,
                 MPI_INFO_NULL,
                 ms_shape,
@@ -352,18 +358,33 @@ main(int argc, char* argv[]) {
                 pgrid,
                 bs);
             while (writer != Writer::end()) {
-              if (writer.buffer_length() > 0) {
-                MSArray array(writer.buffer_length());
-                write_buffer(array.buffer(), writer.indices());
-                *writer = move(array);
+              bool done;
+              auto indices = writer.indices();
+              assert(indices[0].m_axis == ms_top);
+              if (indices[0].min_index() < dimensions[ms_top]) {
+                if (writer.buffer_length() > 0) {
+                  MSArray array(writer.buffer_length());
+                  write_buffer(array.buffer(), indices);
+                  *writer = move(array);
+                }
+                ++writer;
+                ms_top_len = indices[0].max_index() + 1;
+                done = ms_top_len >= dimensions[ms_top];
+              } else {
+                done = true;
               }
-              ++writer;
+              if (done)
+                writer.interrupt();
             }
           }
           MPI_Barrier(MPI_COMM_WORLD);
 
           // read back
           if (my_rank == 0) {
+            ms_shape[0] =
+              ColumnAxisBase<MSColumns>(
+                static_cast<unsigned>(ms_top),
+                ms_top_len);
             auto reader =
               Reader::begin(
                 path,

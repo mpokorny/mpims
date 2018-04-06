@@ -54,6 +54,17 @@ struct IndexBlockSequence {
 	Axes m_axis;
 	std::vector<IndexBlock> m_blocks;
 
+  std::size_t
+  min_index() const {
+    return m_blocks[0].m_index;
+  }
+
+  std::size_t
+  max_index() const {
+    auto& last_block = m_blocks[m_blocks.size() - 1];
+    return last_block.m_index + last_block.m_length - 1;
+  }
+
   bool
   operator==(const IndexBlockSequence<Axes>& other) const {
     return m_axis == other.m_axis && m_blocks == other.m_blocks;
