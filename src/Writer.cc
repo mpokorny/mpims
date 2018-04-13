@@ -45,7 +45,6 @@ void
 Writer::swap(Writer& other) {
   using std::swap;
   swap(m_reader, other.m_reader);
-  swap(m_access_mode, other.m_access_mode);
   swap(m_array, other.m_array);
 }
 
@@ -58,27 +57,32 @@ Writer::next() {
     return;
   if (m_reader.m_debug_log) {
     auto blocks = indices();
-    std::clog << "(" << m_reader.m_rank << ") write ";
+    std::ostringstream oss;
+    oss << "(" << m_reader.m_rank << ") write ";
     const char* sep0 = "";
     std::for_each(
       std::begin(blocks),
       std::end(blocks),
-      [&sep0](auto& ibs) {
-        std::clog << sep0
-                  << mscol_nickname(ibs.m_axis) << ": [";
+      [&sep0, &oss](auto& ibs) {
+        oss << sep0
+            << mscol_nickname(ibs.m_axis) << ": [";
         sep0 = "; ";
         const char *sep1 = "";
         std::for_each(
           std::begin(ibs.m_blocks),
           std::end(ibs.m_blocks),
-          [&sep1](auto& b) {
-            std::clog << sep1 << "(" << b.m_index << "," << b.m_length << ")";
+          [&sep1, &oss](auto& b) {
+            oss << sep1 << "(" << b.m_index << "," << b.m_length << ")";
             sep1 = ",";
           });
-        std::clog << "]";
+        oss << "]";
       });
-    std::clog << std::endl;
+    oss << " at " << (m_array ? std::to_string(getv().offset()) : "--");
+    oss << std::endl;
+    std::clog << oss.str();
   }
+  m_reader.extend();
+  m_reader.set_deferred_fileview();
   if (m_array)
     MPI_File_seek(handles->file, getv().offset(), MPI_SEEK_SET);
   std::shared_ptr<const MPI_Datatype> dt;
@@ -100,15 +104,14 @@ Writer::next() {
               << "expected " << count
               << ", got " << st_count
               << std::endl;
-  if (m_array)
-    m_reader.m_ms_array.swap(m_array.value());
-  m_array = std::nullopt;
-  m_reader.next(false);
+  m_array.reset();
+  m_reader.next();
 }
 
 void
 Writer::interrupt() {
   m_reader.interrupt();
+  m_reader = Reader();
 }
 
 void

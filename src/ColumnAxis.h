@@ -17,8 +17,7 @@ public:
   }
 
   ColumnAxisBase(unsigned col)
-    : m_col(col)
-    , m_length(std::nullopt) {
+    : m_col(col) {
   }
 
   Columns

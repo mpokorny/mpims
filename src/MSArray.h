@@ -39,6 +39,16 @@ struct MSArray {
 
   MSArray(
     std::vector<IndexBlockSequence<MSColumns> >&& blocks,
+    std::optional<int> rank=std::nullopt)
+    : m_blocks(std::move(blocks))
+    , m_offset(0)
+    , m_count(0)
+    , m_req_or_st(std::in_place_index<1>)
+    , m_rank(rank) {
+  }
+
+  MSArray(
+    std::vector<IndexBlockSequence<MSColumns> >&& blocks,
     std::unique_ptr<std::complex<float> >&& buffer,
     MPI_Offset offset,
     int count,
@@ -140,7 +150,7 @@ struct MSArray {
 
   size_t
   num_elements() const {
-    size_t result = 1;
+    size_t result = (m_blocks.size() > 0) ? 1 : 0;
     std::for_each(
       std::begin(m_blocks),
       std::end(m_blocks),
@@ -174,10 +184,7 @@ struct MSArray {
   buffer() const {
     std::lock_guard<decltype(m_mtx)> lock(m_mtx);
     wait();
-    return (
-      m_buffer
-      ? std::optional<std::complex<float>*>(m_buffer.get())
-      : std::nullopt);
+    return m_buffer ? std::make_optional(m_buffer.get()) : std::nullopt;
   };
 
   MPI_Offset

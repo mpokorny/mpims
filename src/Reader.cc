@@ -32,21 +32,20 @@ Reader::Reader(
   std::size_t value_extent,
   bool readahead,
   TraversalState&& traversal_state,
-  bool init_read,
   bool debug_log)
-  : m_mpi_state(std::move(mpi_state))
-  , m_datarep(datarep)
-  , m_ms_shape(ms_shape)
-  , m_iter_params(iter_params)
-  , m_buffer_order(buffer_order)
-  , m_inner_fileview_axis(inner_fileview_axis)
-  , m_etype_datatype(datatype(MPI_CXX_FLOAT_COMPLEX))
-  , m_ms_indexer(ms_indexer)
-  , m_buffer_size(buffer_size)
-  , m_value_extent(value_extent)
-  , m_readahead(readahead)
-  , m_debug_log(debug_log)
-  , m_traversal_state(std::move(traversal_state)) {
+: m_mpi_state(std::move(mpi_state))
+, m_datarep(datarep)
+, m_ms_shape(ms_shape)
+, m_iter_params(iter_params)
+, m_buffer_order(buffer_order)
+, m_inner_fileview_axis(inner_fileview_axis)
+, m_etype_datatype(datatype(MPI_CXX_FLOAT_COMPLEX))
+, m_ms_indexer(ms_indexer)
+, m_buffer_size(buffer_size)
+, m_value_extent(value_extent)
+, m_readahead(readahead)
+, m_debug_log(debug_log)
+, m_traversal_state(std::move(traversal_state)) {
 
   auto handles = m_mpi_state.handles();
   if (handles->comm == MPI_COMM_NULL)
@@ -55,11 +54,29 @@ Reader::Reader(
   MPI_Comm_rank(handles->comm, &m_rank);
 
   if (!*m_inner_fileview_axis)
-    set_fileview(m_traversal_state, handles->file);
-  m_ms_array =
-    read_next_buffer(init_read, m_traversal_state, m_readahead, handles->file);
-  if (m_readahead)
-    start_next(init_read);
+    set_fileview(
+      SetFileviewArgs {
+        m_traversal_state.data_index,
+          m_traversal_state.in_tail,
+          *m_traversal_state.fileview_datatype(),
+          handles->file
+          });
+
+  std::array<bool, 2> tests{ m_traversal_state.cont, m_traversal_state.eof() };
+  MPI_Allreduce(
+    MPI_IN_PLACE,
+    tests.data(),
+    tests.size(),
+    MPI_CXX_BOOL,
+    MPI_LAND,
+    handles->comm);
+  m_traversal_state.cont = tests[0];
+  m_traversal_state.global_eof = tests[1];
+
+  advance_to_next_buffer(m_traversal_state, handles->file);
+  m_ms_array = read_buffer(m_traversal_state, m_readahead, handles->file);
+  if (!m_traversal_state.at_end() && m_readahead)
+    start_next();
 }
 
 Reader::~Reader() {
@@ -130,7 +147,6 @@ Reader::begin(
       value_extent,
       readahead,
       std::move(traversal_state),
-      true,
       debug_log);
 }
 
@@ -197,7 +213,6 @@ Reader::wbegin(
       value_extent,
       false,
       std::move(traversal_state),
-      false,
       debug_log);
 }
 
@@ -296,7 +311,7 @@ Reader::initialize(
   }
   int rank = 0;
   if (reduced_comm != MPI_COMM_NULL) {
-    set_throw_exception_errhandler(reduced_comm);
+    // set_throw_exception_errhandler(reduced_comm);
     MPI_Comm_rank(reduced_comm, &rank);
   }
 
@@ -400,7 +415,7 @@ Reader::initialize(
     MPI_Info_dup(info, &priv_info);
   if (reduced_comm != MPI_COMM_NULL) {
     MPI_File_open(reduced_comm, path.c_str(), amode, priv_info, &file);
-    set_throw_exception_errhandler(file);
+    // set_throw_exception_errhandler(file);
     if (debug_log && rank == 0) {
       MPI_Info info_used;
       MPI_File_get_info(file, &info_used);
@@ -418,9 +433,6 @@ Reader::initialize(
         std::clog << "No ROMIO filesystem type" << std::endl;
       MPI_Info_free(&info_used);
     }
-
-    if ((amode & MPI_MODE_RDWR) != 0)
-      MPI_File_set_atomicity(file, true);
 
     // set the view here in order to associate a data representation with the
     // file handle
@@ -503,7 +515,7 @@ Reader::initialize(
 }
 
 void
-Reader::step(bool cont, bool do_read) {
+Reader::step(bool cont) {
   std::lock_guard<decltype(m_mtx)> lock(m_mtx);
   {
     auto handles = m_mpi_state.handles();
@@ -511,7 +523,7 @@ Reader::step(bool cont, bool do_read) {
     if (handles->comm == MPI_COMM_NULL)
       return;
   }
-  if (at_end())
+  if (cont && at_end())
     throw std::out_of_range("Reader cannot be advanced: at end");
 
   if (m_readahead) {
@@ -523,7 +535,7 @@ Reader::step(bool cont, bool do_read) {
   }
 
   m_traversal_state.cont = cont;
-  start_next(do_read);
+  start_next();
 
   if (!m_readahead) {
     m_traversal_state = std::move(m_next_traversal_state);
@@ -532,14 +544,13 @@ Reader::step(bool cont, bool do_read) {
 }
 
 void
-Reader::start_next(bool do_read) {
+Reader::start_next() {
   auto handles = m_mpi_state.handles();
   std::lock_guard<MPIHandles> lock1(*handles);
   if (handles->comm == MPI_COMM_NULL)
     return;
 
   m_next_traversal_state = m_traversal_state;
-  m_next_traversal_state.advance_to_buffer_end();
 
   bool eof = m_next_traversal_state.eof() || !m_ms_array.buffer();
   std::array<bool, 2> tests{ m_next_traversal_state.cont, eof };
@@ -552,20 +563,15 @@ Reader::start_next(bool do_read) {
     handles->comm);
   m_next_traversal_state.cont = tests[0];
   m_next_traversal_state.global_eof = tests[1];
-  if (m_next_traversal_state.cont && !m_next_traversal_state.global_eof)
-    m_next_ms_array =
-      read_next_buffer(
-        do_read,
-        m_next_traversal_state,
-        m_readahead,
-        handles->file);
-  else
-    m_next_ms_array = MSArray();
+
+  advance_to_next_buffer(m_next_traversal_state, handles->file);
+  m_next_ms_array =
+    read_buffer(m_next_traversal_state, m_readahead, handles->file);
 }
 
 bool
 Reader::at_end() const {
-  return !m_traversal_state.cont || m_traversal_state.global_eof;
+  return m_traversal_state.at_end();
 }
 
 std::size_t
@@ -1249,6 +1255,15 @@ Reader::init_fileview(
           debug_log);
     });
 
+  // TODO: unless we make a single, large contiguous datatype, appending to the
+  // file fails in some cases...why?
+#define BIG_CONTIGUOUS_COUNT 10000
+  if (indeterminate_dt_count) {
+    auto dt = std::move(result);
+    result = datatype();
+    MPI_Type_contiguous(BIG_CONTIGUOUS_COUNT, *dt, result.get());
+  }
+
   MPI_Type_commit(result.get());
 
   if (debug_log) {
@@ -1258,23 +1273,20 @@ Reader::init_fileview(
     MPI_Type_size_x(*result, &size);
     std::clog << "(" << rank << ") fileview datatype size "
               << size / value_extent
-              << ", extent " << extent
+              << ", extent " << lb << " " << extent
               << std::endl;
   }
   return result;
 }
 
-
 void
-Reader::set_fileview(
-  TraversalState& traversal_state,
-  MPI_File file) const {
+Reader::set_fileview(const SetFileviewArgs& args) const {
 
   // assume that m_mtx and m_mpi_state.handles() are locked
 
   // round down to nearest stride boundary those indexes that are within the
   // fileview
-  ArrayIndexer<MSColumns>::index data_index = traversal_state.data_index;
+  ArrayIndexer<MSColumns>::index data_index = args.data_index;
   std::for_each(
     std::crbegin(*m_iter_params),
     std::crend(*m_iter_params),
@@ -1288,27 +1300,35 @@ Reader::set_fileview(
   if (m_debug_log) {
     std::ostringstream oss;
     oss << "(" << m_rank << ") fv offset " << offset;
-    auto index = traversal_state.data_index;
     std::for_each(
       std::begin(*m_iter_params),
       std::end(*m_iter_params),
-      [&index, &oss](const IterParams& ip) {
-        oss << "; " << mscol_nickname(ip.axis) << " " << index.at(ip.axis);
+      [&data_index, &oss](const IterParams& ip) {
+        oss << "; " << mscol_nickname(ip.axis) << " " << data_index.at(ip.axis);
       });
-    oss << (traversal_state.in_tail ? "" : " not") << " in tail";
+    oss << (args.in_tail ? "" : " not") << " in tail";
     oss << std::endl;
     std::clog << oss.str();
   }
 
-  const MPI_Datatype dt = *traversal_state.fileview_datatype();
+  m_ms_array.wait();
+  m_next_ms_array.wait();
 
   MPI_File_set_view(
-    file,
+    args.file,
     offset * m_value_extent,
     MPI_CXX_FLOAT_COMPLEX,
-    dt,
+    args.datatype,
     m_datarep.c_str(),
     MPI_INFO_NULL);
+}
+
+void
+Reader::set_deferred_fileview() const {
+  if (m_deferred_fileview_args) {
+    set_fileview(m_deferred_fileview_args.value());
+    m_deferred_fileview_args.reset();
+  }
 }
 
 std::unique_ptr<std::vector<IndexBlockSequenceMap<MSColumns> > >
@@ -1345,7 +1365,7 @@ Reader::make_index_block_sequences(
           auto nb = ip.buffer_capacity / ip.block_len;
           auto stride = nb * ip.stride;
           std::size_t start = ip.origin;
-          std::size_t end = ip.origin + ip.stride;
+          std::size_t end = ip.origin + ip.block_len;
           for (std::size_t b = 1; b < nb; ++b) {
             std::size_t s = start + b * ip.stride;
             if (s > end) {
@@ -1395,14 +1415,13 @@ Reader::make_index_block_sequences(
 
 MSArray
 Reader::read_arrays(
-  bool do_read,
   TraversalState& traversal_state,
   bool nonblocking,
   std::vector<IndexBlockSequence<MSColumns> >& blocks,
   MPI_File file) const {
   // assume that m_mtx and m_mpi_state.handles() are locked
 
-  if (m_debug_log) {
+  if (m_debug_log && !traversal_state.at_end()) {
     std::ostringstream oss;
     oss << "(" << m_rank << ") read ";
     const char* sep0 = "";
@@ -1431,52 +1450,65 @@ Reader::read_arrays(
   std::tie(dt, count) = traversal_state.buffer_datatype();
 
   std::unique_ptr<std::complex<float> > buffer;
-  if (traversal_state.count > 0 && do_read)
-    buffer.reset(
-      reinterpret_cast<std::complex<float> *>(::operator new(m_buffer_size)));
-  else
-    count = 0;
-
-  MPI_Offset start;
-  MPI_File_get_position(file, &start);
-
-  if (!do_read) {
-    MPI_Status status;
-    MPI_Status_set_elements(&status, *dt, 0);
-    MSArray result(
-      std::move(blocks),
-      std::move(buffer),
-      start,
-      0,
-      dt,
-      std::move(status),
-      (m_debug_log ? std::optional<int>(m_rank) : std::nullopt));
-    return result;
-  }
-  else if (!nonblocking) {
-    MPI_Status status;
-    MPI_File_read_all(file, buffer.get(), count, *dt, &status);
-    MSArray result(
-      std::move(blocks),
-      std::move(buffer),
-      start,
-      count,
-      dt,
-      std::move(status),
-      (m_debug_log ? std::optional<int>(m_rank) : std::nullopt));
-    result.test_status();
-    return result;
+  if (traversal_state.count > 0 && blocks.size() > 0) {
+    if (!traversal_state.at_end())
+      buffer.reset(
+        reinterpret_cast<std::complex<float> *>(::operator new(m_buffer_size)));
   } else {
-    MPI_Request request;
-    MPI_File_iread_all(file, buffer.get(), count, *dt, &request);
+    count = 0;
+  }
+
+  if (traversal_state.at_end()) {
+    MPI_Offset start;
+    if (!m_deferred_fileview_args && count > 0)
+      MPI_File_get_position(file, &start);
+    else
+      start = 0;
+
+    MPI_Status status;
     return MSArray(
       std::move(blocks),
       std::move(buffer),
       start,
       count,
       dt,
-      std::move(request),
-      (m_debug_log ? std::optional<int>(m_rank) : std::nullopt));
+      std::move(status),
+      (m_debug_log ? std::make_optional(m_rank) : std::nullopt)); 
+
+  } else {
+    set_deferred_fileview();
+
+    MPI_Offset start;
+    if (count > 0)
+      MPI_File_get_position(file, &start);
+    else
+      start = 0;
+
+    if (!nonblocking) {
+      MPI_Status status;
+      MPI_File_read_all(file, buffer.get(), count, *dt, &status);
+      MSArray result(
+        std::move(blocks),
+        std::move(buffer),
+        start,
+        count,
+        dt,
+        std::move(status),
+        (m_debug_log ? std::make_optional(m_rank) : std::nullopt));
+      result.test_status();
+      return result;
+    } else {
+      MPI_Request request;
+      MPI_File_iread_all(file, buffer.get(), count, *dt, &request);
+      return MSArray(
+        std::move(blocks),
+        std::move(buffer),
+        start,
+        count,
+        dt,
+        std::move(request),
+        (m_debug_log ? std::make_optional(m_rank) : std::nullopt));
+    }
   }
 }
 
@@ -1487,34 +1519,53 @@ Reader::advance_to_next_buffer(
   // assume that m_mtx and m_mpi_state.handles() are locked
 
   traversal_state.advance_to_next_buffer(
-    [&](MSColumns axis) {
-      if (*m_inner_fileview_axis && axis == m_inner_fileview_axis->value()) {
-        m_ms_array.wait();
-        m_next_ms_array.wait();
-        set_fileview(traversal_state, file);
-      }
+    m_inner_fileview_axis,
+    [this, &traversal_state, &file](MSColumns) {
+
+      auto args = SetFileviewArgs {
+        traversal_state.data_index,
+        traversal_state.in_tail,
+        *traversal_state.fileview_datatype(),
+        file
+      };
+
+      if (traversal_state.at_end())
+        m_deferred_fileview_args = std::make_optional(args);
+      else
+        set_fileview(args);
     });
-  return;
+}
+
+void
+Reader::extend() {
+  std::lock_guard<decltype(m_mtx)> lock(m_mtx);
+  m_traversal_state.global_eof = false;
 }
 
 MSArray
-Reader::read_next_buffer(
-  bool do_read,
+Reader::read_buffer(
   TraversalState& traversal_state,
   bool nonblocking,
   MPI_File file) const {
 
   // assume that m_mtx is locked
-  advance_to_next_buffer(traversal_state, file);
-  auto blocks = traversal_state.blocks();
+  auto blocks = sorted_blocks(traversal_state);
+  auto result = read_arrays(traversal_state, nonblocking, blocks, file);
+  traversal_state.advance_to_buffer_end();
+  return result;
+}
+
+std::vector<IndexBlockSequence<MSColumns> >
+Reader::sorted_blocks(const TraversalState& state) const {
+  auto result = state.blocks(state.count);
   std::stable_sort(
-    std::begin(blocks),
-    std::end(blocks),
+    std::begin(result),
+    std::end(result),
     [this](const IndexBlockSequence<MSColumns>& ibs0,
            const IndexBlockSequence<MSColumns>& ibs1) {
       return buffer_order_compare(ibs0.m_axis, ibs1.m_axis);
     });
-  return read_arrays(do_read, traversal_state, nonblocking, blocks, file);
+  return result;
 }
 
 bool

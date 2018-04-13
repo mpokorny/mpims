@@ -39,8 +39,7 @@ class Reader
 
 public:
 
-  // Error to indicate attempt to create an array with an indeterminate,
-  // internal, that is, any but the outermost, axis
+  // Array with an indeterminate, internal, that is, any but the outermost, axis
   class IndeterminateArrayError
     : std::runtime_error {
   public:
@@ -49,8 +48,8 @@ public:
     }
   };
 
-  // Error to indicate traversal of an indeterminate MS with the top traversal axis
-  // not equal to the top (indeterminate) MS axis.
+  // Traversal of an indeterminate MS with the top traversal axis not equal to
+  // the top (indeterminate) MS axis.
   class IndeterminateArrayTraversalError
     : std::runtime_error {
   public:
@@ -72,7 +71,7 @@ public:
 
     TraversalState()
       : cont(false)
-      , global_eof(false) {
+      , global_eof(true) {
     }
 
     TraversalState(
@@ -115,17 +114,20 @@ public:
       if (axis_iters.front().params->axis == outer_ms_axis) {
         eof_axis_iters.push_back(axis_iters.front());
         auto& eai = eof_axis_iters.front();
+        max_count = std::max(eai.params->buffer_capacity, 1uL);
         while (!eai.at_end && eai.index < outer_ms_length)
           eai.increment();
       }
-      cont = !eof();
+      cont = true;
     }
 
     //EOF condition flag
     bool
     eof() const {
-      if ((axis_iters.empty() && eof_axis_iters.empty()) || global_eof)
+      if (axis_iters.empty() || global_eof)
         return true;
+      if (eof_axis_iters.empty())
+        return false;
       auto ai = std::rbegin(axis_iters);
       auto ai_end = std::rend(axis_iters);
       auto eai = std::rbegin(eof_axis_iters);
@@ -141,6 +143,11 @@ public:
       }
       return result;
     };
+
+    bool
+    at_end() const {
+      return !cont || global_eof;
+    }
 
     // continuation condition flag (to allow breaking out from iteration)
     bool cont;
@@ -213,9 +220,9 @@ public:
     }
 
     std::vector<IndexBlockSequence<MSColumns> >
-    blocks() const {
+    blocks(int cnt) const {
       std::vector<IndexBlockSequence<MSColumns> > result;
-      if (count > 0 && !eof()) {
+      if (cnt > 0) {
         for (std::size_t i = 0; i < iter_params->size(); ++i) {
           auto& ip = (*iter_params)[i];
           if (!ip.fully_in_array && ip.buffer_capacity == 0) {
@@ -235,27 +242,30 @@ public:
 
     void
     advance_to_buffer_end() {
-      AxisIter* axis_iter = &axis_iters.back();
-      axis_iter->increment(max_count);
-      data_index[axis_iter->params->axis] = axis_iter->index;
-      while (!eof() && axis_iter->at_end) {
-
-        data_index[axis_iter->params->axis] = axis_iter->params->origin;
-        axis_iters.pop_back();
-        if (!axis_iters.empty()) {
-          axis_iter = &axis_iters.back();
-          axis_iter->increment();
-          data_index[axis_iter->params->axis] = axis_iter->index;
-        }
-      }
+      if (!axis_iters.empty()) {
+        AxisIter* axis_iter = &axis_iters.back();
+        axis_iter->increment(max_count);
+        data_index[axis_iter->params->axis] = axis_iter->index;
+        while (!axis_iters.empty() && axis_iter->at_end) {
+          data_index[axis_iter->params->axis] = axis_iter->params->origin;
+          axis_iters.pop_back();
+          if (!axis_iters.empty()) {
+            axis_iter = &axis_iters.back();
+            axis_iter->increment();
+            data_index[axis_iter->params->axis] = axis_iter->index;
+          }
+        }}
     }
 
     template <typename F>
     void
-    advance_to_next_buffer(F at_axis) {
+    advance_to_next_buffer(
+      std::shared_ptr<const std::optional<MSColumns> > inner_fileview_axis,
+      F at_fileview_axis) {
+
       count = 0;
       max_count = 0;
-      while (!eof()) {
+      while (!axis_iters.empty()) {
         AxisIter& axis_iter = axis_iters.back();
         MSColumns axis = axis_iter.params->axis;
         if (!axis_iter.at_end) {
@@ -274,7 +284,8 @@ public:
           } else {
             in_tail = false;
           }
-          at_axis(axis);
+          if (*inner_fileview_axis && axis == inner_fileview_axis->value())
+            at_fileview_axis(axis);
           if (axis_iter.params->buffer_capacity > 0)
             return;
           const IterParams* next_params = &(*iter_params)[depth];
@@ -304,6 +315,17 @@ public:
 
     std::shared_ptr<const MPI_Datatype> m_tail_fileview_datatype;
 
+    std::ostringstream
+    show_iters(const std::deque<AxisIter>& iters) const {
+      std::ostringstream result;
+      std::for_each(
+        std::begin(iters),
+        std::end(iters),
+        [&result](const auto& ai) {
+          result << mscol_nickname(ai.params->axis) << ":" << ai.index << ";";
+        });
+      return result;
+    }
   };
 
   Reader();
@@ -320,7 +342,6 @@ public:
     std::size_t value_extent,
     bool readahead,
     TraversalState&& traversal_state,
-    bool init_read,
     bool debug_log);
 
   Reader(const Reader& other)
@@ -556,7 +577,7 @@ public:
     bool readahead,
     bool debug_log = false);
 
-  static Reader
+  static const Reader
   end() {
     return Reader();
   };
@@ -600,14 +621,13 @@ public:
   at_end() const;
 
   void
-  next(bool do_read=true) {
-    // FIXME: do_read, and all its descendents are a bit of a hack
-    step(true, do_read);
+  next() {
+    step(true);
   }
 
   void
   interrupt() {
-    step(false, false);
+    step(false);
   }
 
   const std::vector<IndexBlockSequence<MSColumns> >&
@@ -649,6 +669,13 @@ public:
 
 protected:
 
+  struct SetFileviewArgs {
+    ArrayIndexer<MSColumns>::index data_index;
+    bool in_tail;
+    MPI_Datatype datatype;
+    MPI_File file;
+  };
+
   static Reader
   wbegin(
     const std::string& path,
@@ -688,10 +715,10 @@ protected:
     TraversalState& traversal_state);
 
   void
-  step(bool cont, bool do_read);
+  step(bool cont);
 
   void
-  start_next(bool do_read);
+  start_next();
 
   const MSArray&
   getv() const {
@@ -779,16 +806,16 @@ protected:
 
   MSArray
   read_arrays(
-    bool do_read,
     TraversalState& traversal_state,
     bool nonblocking,
     std::vector<IndexBlockSequence<MSColumns> >& blocks,
     MPI_File file) const;
 
   void
-  set_fileview(
-    TraversalState& traversal_state,
-    MPI_File file) const;
+  set_fileview(const SetFileviewArgs& args) const;
+
+  void
+  set_deferred_fileview() const;
 
   void
   advance_to_next_buffer(
@@ -796,11 +823,10 @@ protected:
     MPI_File file) const;
 
   void
-  advance_to_buffer_end(TraversalState& traversal_state) const;
+  extend();
 
   MSArray
-  read_next_buffer(
-    bool do_read,
+  read_buffer(
     TraversalState& TraversalState,
     bool nonblocking,
     MPI_File file) const;
@@ -826,6 +852,9 @@ protected:
       return &*ip;
     return nullptr;
   }
+
+  std::vector<IndexBlockSequence<MSColumns> >
+  sorted_blocks(const TraversalState& state) const;
 
 private:
 
@@ -864,7 +893,9 @@ private:
 
   mutable MSArray m_next_ms_array;
 
-  mutable std::mutex m_mtx;
+  mutable std::recursive_mutex m_mtx;
+
+  mutable std::optional<SetFileviewArgs> m_deferred_fileview_args;
 };
 
 void
