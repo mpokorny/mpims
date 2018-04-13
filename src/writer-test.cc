@@ -4,6 +4,7 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <stack>
 #include <utility>
 #include <vector>
 
@@ -300,6 +301,34 @@ main(int argc, char* argv[]) {
   for (auto& msao : ms_axis_orders) {
     for (auto& bs : buffer_sizes) {
       for (auto& tvo : ms_axis_orders) {
+
+        vector<ColumnAxisBase<MSColumns> > ms_shape;
+        transform(
+          begin(msao),
+          end(msao),
+          back_inserter(ms_shape),
+          [&dimensions](auto& col) {
+            return ColumnAxisBase<MSColumns>(
+              static_cast<unsigned>(col),
+              dimensions[col]);
+          });
+
+        unordered_map<MSColumns,std::size_t> dims(dimensions);
+        MSColumns ms_top = ms_shape[0].id();
+        AMode amode;
+        if (ms_top == tvo[0]) {
+          amode = AMode::WriteOnly;
+          ms_shape[0] =
+            ColumnAxisBase<MSColumns>(static_cast<unsigned>(ms_top));
+          if (pgrid.count(ms_top) > 0) {
+            auto stride =
+              pgrid[ms_top].num_processes * pgrid[ms_top].block_size;
+            dims[ms_top] = ((dims[ms_top] + (stride - 1)) / stride) * stride; 
+          }
+        } else {
+          amode = AMode::ReadWrite;
+        }
+        MPI_Aint ms_top_len = dims[ms_top];
         ostringstream output;
         output << "========= ms order "
                << colnames(msao)
@@ -329,22 +358,12 @@ main(int argc, char* argv[]) {
             0,
             MPI_COMM_WORLD);
 
-          vector<ColumnAxisBase<MSColumns> > ms_shape;
-          transform(
-            begin(msao),
-            end(msao),
-            back_inserter(ms_shape),
-            [&dimensions](auto& col) {
-              return ColumnAxisBase<MSColumns>(
-                static_cast<unsigned>(col),
-                dimensions[col]);
-            });
-
           {
-            auto writer =
+            Writer writer =
               Writer::begin(
                 path,
                 "external32",
+                amode,
                 MPI_COMM_WORLD,
                 MPI_INFO_NULL,
                 ms_shape,
@@ -352,40 +371,58 @@ main(int argc, char* argv[]) {
                 pgrid,
                 bs);
             while (writer != Writer::end()) {
-              if (writer.buffer_length() > 0) {
-                MSArray array(writer.buffer_length());
-                write_buffer(array.buffer(), writer.indices());
-                *writer = move(array);
+              bool done = false;
+              auto indices = writer.indices();
+              assert(indices.size() == dims.size() || indices.size() == 0);
+              if (amode == AMode::ReadWrite
+                  || indices.size() == 0
+                  || indices[0].min_index() < dims[ms_top]) {
+                if (writer.buffer_length() > 0) {
+                  MSArray array(writer.buffer_length());
+                  write_buffer(array.buffer(), indices);
+                  *writer = move(array);
+                }
+                ++writer;
+              } else {
+                done = true;
               }
-              ++writer;
+              if (done)
+                writer.interrupt(); 
             }
           }
           MPI_Barrier(MPI_COMM_WORLD);
 
           // read back
           if (my_rank == 0) {
-            auto reader =
-              Reader::begin(
-                path,
-                "external32",
-                MPI_COMM_SELF,
-                MPI_INFO_NULL,
-                ms_shape,
-                read_order,
-                true,
-                read_pgrid,
-                max_buffer_size,
-                false);
-            while (reader != Reader::end()) {
-              auto& array = *reader;
-              if (array.buffer()) {
-                if (cb(array, output))
+            if (amode == AMode::WriteOnly)
+              ms_shape[0] =
+                ColumnAxisBase<MSColumns>(
+                  static_cast<unsigned>(ms_top),
+                  ms_top_len);
+            {
+              auto reader =
+                Reader::begin(
+                  path,
+                  "external32",
+                  MPI_COMM_SELF,
+                  MPI_INFO_NULL,
+                  ms_shape,
+                  read_order,
+                  true,
+                  read_pgrid,
+                  max_buffer_size,
+                  false);
+              while (reader != Reader::end()) {
+                auto& array = *reader;
+                if (array.buffer()) {
+                  if (cb(array, output))
+                    ++reader;
+                  else
+                    reader.interrupt();
+                }
+                else {
                   ++reader;
-                else
-                  reader.interrupt();
-              }
-              else {
-                ++reader;
+                }
               }
             }
             cout << output.str();

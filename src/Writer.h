@@ -17,7 +17,8 @@ class Writer
   : public std::iterator<std::forward_iterator_tag, const MSArray, std::size_t> {
 
 public:
-  Writer() {
+  Writer()
+    : m_reader(Reader()) {
   }
 
   Writer(Reader&& reader)
@@ -34,7 +35,7 @@ public:
     , m_array(std::move(other).m_array) {
   }
 
-  static Writer
+  static const Writer
   end() {
     return Writer();
   };
@@ -87,7 +88,9 @@ public:
 
   bool
   at_end() const {
-    return m_reader.at_end();
+    return ((!m_reader.m_ms_shape
+             || !(*m_reader.m_ms_shape)[0].is_indeterminate())
+            && m_reader.at_end());
   };
 
   void
@@ -99,21 +102,12 @@ public:
   std::vector<IndexBlockSequence<MSColumns> >
   indices() const {
     std::lock_guard<decltype(m_mtx)> lock(m_mtx);
-    return m_reader.m_traversal_state.blocks();
+    return m_reader->blocks();
   };
 
   std::size_t
   buffer_length() const {
-    std::shared_ptr<const MPI_Datatype> dt;
-    unsigned count;
-    MPI_Count size;
-    std::lock_guard<decltype(m_mtx)> lock(m_mtx);
-    if (m_reader.m_traversal_state.count == 0)
-      return 0;
-    std::tie(dt, count) = m_reader.m_traversal_state.buffer_datatype();
-    MPI_Type_size_x(*dt, &size);
-    assert(size % sizeof(std::complex<float>) == 0);
-    return (size / sizeof(std::complex<float>)) * count;
+    return m_reader->num_elements() * sizeof(std::complex<float>);
   }
 
   void
@@ -151,6 +145,7 @@ public:
   begin(
     const std::string& path,
     const std::string& datarep,
+    AMode access_mode,
     MPI_Comm comm,
     MPI_Info info,
     const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
