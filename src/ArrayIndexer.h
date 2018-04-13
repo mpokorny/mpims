@@ -122,7 +122,7 @@ public:
       axes,
       std::end(m_axes),
       [&result, &ix] (const ColumnAxisBase<Columns>& ax) {
-        if (result && !ax.is_unbounded())
+        if (result && !ax.is_indeterminate())
           result = ix.at(ax.id()) + ax.length().value() * result.value();
         else
           result = std::nullopt;

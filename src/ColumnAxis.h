@@ -17,8 +17,7 @@ public:
   }
 
   ColumnAxisBase(unsigned col)
-    : m_col(col)
-    , m_length(std::nullopt) {
+    : m_col(col) {
   }
 
   Columns
@@ -32,7 +31,7 @@ public:
   }
 
   bool
-  is_unbounded() const {
+  is_indeterminate() const {
     return !m_length;
   }
 

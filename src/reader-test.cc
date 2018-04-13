@@ -297,7 +297,7 @@ main(int argc, char* argv[]) {
       for (auto& to : traversal_orders) {
         for (auto& bs : buffer_sizes) {
           for (auto& mss : {ms_shape /*, ms_shape_u*/}) {
-            if (mss[0].is_unbounded() && to[0] !=  mss[0].id())
+            if (mss[0].is_indeterminate() && to[0] !=  mss[0].id())
               continue;
             ostringstream output;
             output << "========= traversal_order "
@@ -305,7 +305,9 @@ main(int argc, char* argv[]) {
                    << "; buffer_size "
                    << num_elements(bs)
                    << (mso ? " (ms order)" : "")
-                   << (mss[0].is_unbounded() ? " (unspecified ms length)" : "")
+                   << (mss[0].is_indeterminate()
+                       ? " (unspecified ms length)"
+                       : "")
                    << " ========="
                    << endl;
             auto reader =
@@ -320,6 +322,7 @@ main(int argc, char* argv[]) {
                 pgrid,
                 bs,
                 false);
+
             while (reader != Reader::end()) {
               const MSArray& array = *reader;
               if (array.buffer()) {
@@ -327,8 +330,7 @@ main(int argc, char* argv[]) {
                   ++reader;
                 else
                   reader.interrupt();
-              }
-              else {
+              } else {
                 ++reader;
               }
             }
