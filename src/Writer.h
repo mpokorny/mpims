@@ -110,6 +110,15 @@ public:
     return m_reader->num_elements() * sizeof(std::complex<float>);
   }
 
+  std::optional<std::size_t>
+  outer_min_index() const {
+    const auto i = indices();
+    if (i.size() > 0)
+      return std::make_optional(i[0].min_index());
+    else
+      return std::nullopt;
+  }
+
   void
   swap(Writer& other);
 
