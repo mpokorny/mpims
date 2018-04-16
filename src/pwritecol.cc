@@ -452,6 +452,13 @@ main(int argc, char *argv[]) {
                 << (in_order ? "write-only" : "read-before-write")
                 << " mode **" << std::endl;
 
+    std::optional<std::size_t> num_outer;
+    if (in_order) {
+      num_outer = ms_shape[0].length();
+      ms_shape[0] =
+        ColumnAxisBase<MSColumns>(static_cast<unsigned>(ms_shape[0].id()));
+    }
+
     Times times;
     unsigned num_ranks;
     MPI_Barrier(MPI_COMM_WORLD);
@@ -462,7 +469,7 @@ main(int argc, char *argv[]) {
             write_all(
               ms_shape,
               traversal_order,
-              (in_order ? ms_shape[0].length() : std::nullopt),
+              num_outer,
               pgrid,
               max_buffer_size,
               ms_path,
