@@ -305,6 +305,7 @@ unsigned
 write_all(
   std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
   std::vector<MSColumns>& traversal_order,
+  std::optional<std::size_t> num_outer,
   std::unordered_map<MSColumns, DataDistribution>& pgrid,
   std::size_t buffer_size,
   std::string ms_path,
@@ -313,12 +314,13 @@ write_all(
 
   unsigned result = 0;
 
+  std::complex<float> val {1.0, 53.0};
   try {
     auto writer =
       Writer::begin(
         ms_path,
         datarep,
-        AMode::WriteOnly,
+        (num_outer ? AMode::WriteOnly : AMode::ReadWrite),
         MPI_COMM_WORLD,
         MPI_INFO_NULL,
         ms_shape,
@@ -327,8 +329,10 @@ write_all(
         buffer_size,
         debug_log);
     result = writer.num_ranks();
-    std::complex<float> val {1.0, 53.0};
-    while (writer != Writer::end()) {
+    while ((!num_outer && writer != Writer::end())
+           || (num_outer
+               && (writer.outer_min_index().value_or(num_outer.value())
+                   < num_outer.value()))) {
       auto buffer_length = writer.buffer_length();
       if (buffer_length > 0) {
         MSArray array(buffer_length);
@@ -395,6 +399,17 @@ timeit(const F& f, Args...args) {
   return std::make_tuple(a, Times{real, user, system});
 }
 
+bool
+in_order_traversal(
+  const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
+  const std::vector<MSColumns>& traversal_order) {
+
+  bool result = ms_shape.size() == traversal_order.size();
+  for (unsigned i = 0; result && i < ms_shape.size(); ++i)
+    result = ms_shape[i].id() == traversal_order[i];
+  return result;
+}
+
 int
 main(int argc, char *argv[]) {
 
@@ -427,9 +442,17 @@ main(int argc, char *argv[]) {
     MPI_Init(&argc, &argv);
     set_throw_exception_errhandler(MPI_COMM_WORLD);
 
-    MPI_Barrier(MPI_COMM_WORLD);
+    bool in_order = in_order_traversal(ms_shape, traversal_order);
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    if (rank == 0)
+      std::cout << "** "
+                << (in_order ? "write-only" : "read-before-write")
+                << " mode **" << std::endl;
+
     Times times;
     unsigned num_ranks;
+    MPI_Barrier(MPI_COMM_WORLD);
     std::tie(num_ranks, times) =
       timeit(
         [&]() {
@@ -437,6 +460,7 @@ main(int argc, char *argv[]) {
             write_all(
               ms_shape,
               traversal_order,
+              (in_order ? ms_shape[0].length() : std::nullopt),
               pgrid,
               max_buffer_size,
               ms_path,
@@ -446,8 +470,6 @@ main(int argc, char *argv[]) {
           return n;
         });
 
-    int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     std::array<double,2> tarray{ times.user, times.system };
     MPI_Reduce(
       (rank == 0) ? MPI_IN_PLACE : tarray.data(),
