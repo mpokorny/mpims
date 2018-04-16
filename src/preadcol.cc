@@ -204,6 +204,11 @@ parse_options(
         << "  [(--datarep | -d) <datarep>]" << std::endl
         << "  <ms-data-column-file>" << std::endl;
 
+  if (argc == 1) {
+    std::cout << usage.str();
+    return false;
+  }
+
   ms_buffer_order = true;
   debug_log = false;
   readahead = false;
@@ -213,7 +218,7 @@ parse_options(
 
   while (1) {
     opt = 0;
-    int c = getopt_long(argc, argv, "s:o:g::b:trvhd::", long_options, nullptr);
+    int c = getopt_long(argc, argv, "s:o:g:b:trvhd:", long_options, nullptr);
 
     if (c == -1) {
       ms_path = argv[optind];
@@ -222,59 +227,56 @@ parse_options(
 
     int current_optind = optind - 1;
 
+    if (c == 0)
+      c = opt;
+    auto eq = strchr(argv[current_optind], '=');
+    auto val = (eq ? eq + 1 : argv[current_optind]);
+
     switch (c) {
-    case 0: {
-      auto eq = strchr(argv[current_optind], '=');
-      auto val = (eq ? eq + 1 : argv[current_optind]);
-
-      switch (opt) {
-      case 's':
-        try {
-          ms_shape = parse_shape(token_sep, spec_sep, val);
-          got_shape = true;
-        } catch (const std::exception& e) {
-          std::cerr << "Failed to parse MS shape: "
-                    << e.what() << std::endl;
-        }
-        break;
-
-      case 'o':
-        try {
-          traversal_order = parse_traversal(token_sep, val);
-          got_order = true;
-        } catch (const std::exception& e) {
-          std::cerr << "Failed to parse traversal order: "
-                    << e.what() << std::endl;
-        }
-        break;
-
-      case 'b':
-        try {
-          buffer_size = parse_buffer_size(val);
-          got_buffer = true;
-        } catch (const std::exception& e) {
-          std::cerr << "Failed to parse buffer size: "
-                    << e.what() << std::endl;
-        }
-        break;
-
-      case 'g':
-        try {
-          pgrid = parse_distribution(token_sep, spec_sep, val);
-        } catch (const std::exception& e) {
-          std::cerr << "Failed to parse grid: "
-                    << e.what() << std::endl;
-          std::cout << usage.str();
-          return false;
-        }
-        break;
-
-      case 'd':
-        datarep = val;
-        break;
-      };
+    case 's':
+      try {
+        ms_shape = parse_shape(token_sep, spec_sep, val);
+        got_shape = true;
+      } catch (const std::exception& e) {
+        std::cerr << "Failed to parse MS shape: "
+                  << e.what() << std::endl;
+      }
       break;
-    }
+
+    case 'o':
+      try {
+        traversal_order = parse_traversal(token_sep, val);
+        got_order = true;
+      } catch (const std::exception& e) {
+        std::cerr << "Failed to parse traversal order: "
+                  << e.what() << std::endl;
+      }
+      break;
+
+    case 'b':
+      try {
+        buffer_size = parse_buffer_size(val);
+        got_buffer = true;
+      } catch (const std::exception& e) {
+        std::cerr << "Failed to parse buffer size: "
+                  << e.what() << std::endl;
+      }
+      break;
+
+    case 'g':
+      try {
+        pgrid = parse_distribution(token_sep, spec_sep, val);
+      } catch (const std::exception& e) {
+        std::cerr << "Failed to parse grid: "
+                  << e.what() << std::endl;
+        std::cout << usage.str();
+        return false;
+      }
+      break;
+
+    case 'd':
+      datarep = val;
+      break;
 
     case 't':
       ms_buffer_order = false;
@@ -296,7 +298,7 @@ parse_options(
     case 'h':
       std::cout << usage.str();
       return false;
-    }
+    };
   }
 
   if (!got_shape || !got_order || !got_buffer || ms_path == "") {
@@ -441,16 +443,16 @@ main(int argc, char *argv[]) {
       timeit(
         [&]() {
           unsigned n =
-            read_all(
-              ms_shape,
-              traversal_order,
-              pgrid,
-              max_buffer_size,
-              ms_path,
-              datarep,
-              ms_buffer_order,
-              readahead,
-              debug_log);
+          read_all(
+            ms_shape,
+            traversal_order,
+            pgrid,
+            max_buffer_size,
+            ms_path,
+            datarep,
+            ms_buffer_order,
+            readahead,
+            debug_log);
           MPI_Barrier(MPI_COMM_WORLD);
           return n;
         });
