@@ -102,7 +102,6 @@ Usage: ./preadcol
   (--buffer | -b) <buffer-size>
   [(--grid |-g) <distribution>]
   [((--transpose | -t) | --no-transpose)]
-  [(--readahead | -r)]
   [(--verbose | -v)]
   [(--datarep | -d) <datarep>]
   <ms-data-column-file>
@@ -126,9 +125,6 @@ Required options are `--msshape`, `--order` and `--buffer`.
   that the value of this flag does *not* affect the traversal order, only the
   ordering of values within a single read buffer; default is `--no-transpose`,
   which generally provides better performance
-* `--readahead`: boolean flag to specify whether the reading process should
-  asynchronously read ahead of client requests by one buffer; not very useful
-  for *preadcol* itself, but it is a feature of the underlying library
 * `--verbose`: produce verbose debugging output
 * `--datarep`: data value representation in file; value may by any of those
   supported by the MPI implementation (normally "native", "internal" and

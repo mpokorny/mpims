@@ -134,7 +134,7 @@ checkit(
 }
 
 bool
-cb(const MSArray& array, ostringstream& output) {
+cb(const CxFltMSArray& array, ostringstream& output) {
 
   if (!array.buffer())
     return false;
@@ -311,7 +311,7 @@ main(int argc, char* argv[]) {
                    << " ========="
                    << endl;
             auto reader =
-              Reader::begin(
+              CxFltReader::begin(
                 argv[1],
                 "native",
                 MPI_COMM_WORLD,
@@ -323,8 +323,8 @@ main(int argc, char* argv[]) {
                 bs,
                 false);
 
-            while (reader != Reader::end()) {
-              const MSArray& array = *reader;
+            while (reader != CxFltReader::end()) {
+              const CxFltMSArray& array = *reader;
               if (array.buffer()) {
                 if (cb(array, output))
                   ++reader;

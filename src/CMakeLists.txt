@@ -25,9 +25,8 @@ endif("${isSystemDir}" STREQUAL "-1")
 add_library(mpims SHARED
   mpims.cc
   MSColumns.cc
-  MSArray.cc
-  Reader.cc
-  Writer.cc)
+  ReaderBase.cc
+  Reader.cc)
 target_include_directories(mpims PRIVATE
   ${MPI_CXX_INCLUDE_PATH}
   .)
@@ -48,14 +47,18 @@ install(TARGETS mpims
   GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 install(FILES
   ArrayIndexer.h
+  AxisIter.h
   ColumnAxis.h
   DataDistribution.h
   IndexBlock.h
+  IterParams.h
   mpims.h
   MSArray.h
   MSColumns.h
+  ReaderBase.h
   Reader.h
   ReaderMPIState.h
+  TraversalState.h
   Writer.h
   DESTINATION include
   CONFIGURATIONS Release

@@ -15,6 +15,7 @@ mpims::mscol_nickname(MSColumns col) {
   static std::string baseline_nick("BAL");
   static std::string channel_nick("CH");
   static std::string polarization_product_nick("POL");
+  static std::string complex_nick("CPX");
   static std::string fail("");
 
   switch (col) {
@@ -39,6 +40,9 @@ mpims::mscol_nickname(MSColumns col) {
   case MSColumns::polarization_product:
     return polarization_product_nick;
     break;
+  case MSColumns::complex:
+    return complex_nick;
+    break;
   }
   assert(false);
   return fail;
@@ -54,7 +58,8 @@ mpims::mscol(const std::string& nick) {
     {mscol_nickname(MSColumns::baseline), MSColumns::baseline},
     {mscol_nickname(MSColumns::channel), MSColumns::channel},
     {mscol_nickname(MSColumns::polarization_product),
-        MSColumns::polarization_product}
+        MSColumns::polarization_product},
+    {mscol_nickname(MSColumns::complex), MSColumns::complex}
   };
   return map[nick];
 }
