@@ -3,7 +3,6 @@
 #define MS_ARRAY_H_
 
 #include <algorithm>
-#include <complex>
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -14,12 +13,12 @@
 
 #include <mpi.h>
 
-#include <mpims.h>
 #include <IndexBlock.h>
 #include <MSColumns.h>
 
 namespace mpims {
 
+template <typename T>
 struct MSArray {
 
   MSArray()
@@ -29,9 +28,7 @@ struct MSArray {
   }
 
   MSArray(std::size_t len)
-    : m_buffer(
-      reinterpret_cast<std::complex<float> *>(
-        ::operator new(len * sizeof(std::complex<float>))))
+    : m_buffer(reinterpret_cast<T *>(::operator new(len * sizeof(T))))
     , m_offset(0)
     , m_count(0)
     , m_req_or_st(std::in_place_index<1>) {
@@ -49,7 +46,7 @@ struct MSArray {
 
   MSArray(
     std::vector<IndexBlockSequence<MSColumns> >&& blocks,
-    std::unique_ptr<std::complex<float> >&& buffer,
+    std::unique_ptr<T>&& buffer,
     MPI_Offset offset,
     int count,
     std::shared_ptr<const MPI_Datatype>& datatype,
@@ -66,7 +63,7 @@ struct MSArray {
 
   MSArray(
     std::vector<IndexBlockSequence<MSColumns> >&& blocks,
-    std::unique_ptr<std::complex<float> >&& buffer,
+    std::unique_ptr<T>&& buffer,
     MPI_Offset offset,
     int count,
     std::shared_ptr<const MPI_Datatype>& datatype,
@@ -88,10 +85,9 @@ struct MSArray {
     , m_datatype(other.m_datatype)
     , m_rank(other.m_rank) {
     other.wait();
-    std::size_t sz = other.num_elements() * sizeof(std::complex<float>);
+    std::size_t sz = other.num_elements() * sizeof(T);
     if (sz > 0 && other.m_buffer) {
-      m_buffer.reset(
-        reinterpret_cast<std::complex<float> *>(::operator new(sz)));
+      m_buffer.reset(reinterpret_cast<T *>(::operator new(sz)));
       memcpy(m_buffer.get(), other.m_buffer.get(), sz);
     }
     m_req_or_st = other.m_req_or_st;
@@ -180,7 +176,7 @@ struct MSArray {
     return m_blocks;
   }
 
-  std::optional<std::complex<float>*>
+  std::optional<T *>
   buffer() const {
     std::lock_guard<decltype(m_mtx)> lock(m_mtx);
     wait();
@@ -228,7 +224,7 @@ private:
 
   std::vector<IndexBlockSequence<MSColumns> > m_blocks;
 
-  mutable std::unique_ptr<std::complex<float> > m_buffer;
+  mutable std::unique_ptr<T> m_buffer;
 
   MPI_Offset m_offset;
 
@@ -241,8 +237,11 @@ private:
   std::optional<int> m_rank;
 };
 
+template <typename T>
 void
-swap(MSArray& array1, MSArray& array2);
+swap(MSArray<T>& array1, MSArray<T>& array2) {
+  array1.swap(array2);
+}
 
 }
 

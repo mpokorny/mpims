@@ -134,7 +134,7 @@ checkit(
 }
 
 bool
-cb(const MSArray& array, ostringstream& output) {
+cb(const MSArray<std::complex<float> >& array, ostringstream& output) {
 
   if (!array.buffer())
     return false;
@@ -311,7 +311,7 @@ main(int argc, char* argv[]) {
                    << " ========="
                    << endl;
             auto reader =
-              Reader::begin(
+              Reader<std::complex<float> >::begin(
                 argv[1],
                 "native",
                 MPI_COMM_WORLD,
@@ -323,8 +323,8 @@ main(int argc, char* argv[]) {
                 bs,
                 false);
 
-            while (reader != Reader::end()) {
-              const MSArray& array = *reader;
+            while (reader != Reader<std::complex<float> >::end()) {
+              const MSArray<std::complex<float> >& array = *reader;
               if (array.buffer()) {
                 if (cb(array, output))
                   ++reader;

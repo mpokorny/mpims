@@ -319,7 +319,7 @@ write_all(
   std::complex<float> val {1.0, 53.0};
   try {
     auto writer =
-      Writer::begin(
+      Writer<std::complex<float> >::begin(
         ms_path,
         datarep,
         (num_outer ? AMode::WriteOnly : AMode::ReadWrite),
@@ -331,13 +331,13 @@ write_all(
         buffer_size,
         debug_log);
     result = writer.num_ranks();
-    while ((!num_outer && writer != Writer::end())
+    while ((!num_outer && writer != Writer<std::complex<float> >::end())
            || (num_outer
                && (writer.outer_min_index().value_or(num_outer.value())
                    < num_outer.value()))) {
       auto buffer_length = writer.buffer_length();
       if (buffer_length > 0) {
-        MSArray array(buffer_length);
+        MSArray<std::complex<float> > array(buffer_length);
         write_buffer(array.buffer(), buffer_length, val);
         *writer = std::move(array);
       }

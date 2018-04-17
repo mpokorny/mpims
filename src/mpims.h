@@ -10,6 +10,11 @@
 
 namespace mpims {
 
+enum AMode {
+  WriteOnly,
+  ReadWrite
+};
+
 class mpi_error
   : public std::runtime_error {
 

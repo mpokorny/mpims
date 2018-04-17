@@ -325,7 +325,7 @@ read_all(
 
   try {
     auto reader =
-      Reader::begin(
+      Reader<std::complex<float> >::begin(
         ms_path,
         datarep,
         MPI_COMM_WORLD,
@@ -338,7 +338,7 @@ read_all(
         readahead,
         debug_log);
     result = reader.num_ranks();
-    while (reader != Reader::end()) {
+    while (reader != Reader<std::complex<float> >::end()) {
       auto array __attribute__((unused)) = *reader;
       ++reader;
     }

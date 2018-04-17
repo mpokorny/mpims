@@ -137,7 +137,7 @@ checkit(
 }
 
 bool
-cb(const MSArray& array, ostringstream& output) {
+cb(const MSArray<std::complex<float> >& array, ostringstream& output) {
 
   if (!array.buffer())
     return false;
@@ -359,8 +359,8 @@ main(int argc, char* argv[]) {
             MPI_COMM_WORLD);
 
           {
-            Writer writer =
-              Writer::begin(
+            Writer<std::complex<float> > writer =
+              Writer<std::complex<float> >::begin(
                 path,
                 "external32",
                 amode,
@@ -370,7 +370,7 @@ main(int argc, char* argv[]) {
                 tvo,
                 pgrid,
                 bs);
-            while (writer != Writer::end()) {
+            while (writer != Writer<std::complex<float> >::end()) {
               bool done = false;
               auto indices = writer.indices();
               assert(indices.size() == dims.size() || indices.size() == 0);
@@ -378,7 +378,7 @@ main(int argc, char* argv[]) {
                   || indices.size() == 0
                   || indices[0].min_index() < dims[ms_top]) {
                 if (writer.buffer_length() > 0) {
-                  MSArray array(writer.buffer_length());
+                  MSArray<std::complex<float> > array(writer.buffer_length());
                   write_buffer(array.buffer(), indices);
                   *writer = move(array);
                 }
@@ -401,7 +401,7 @@ main(int argc, char* argv[]) {
                   ms_top_len);
             {
               auto reader =
-                Reader::begin(
+                Reader<std::complex<float> >::begin(
                   path,
                   "external32",
                   MPI_COMM_SELF,
@@ -412,7 +412,7 @@ main(int argc, char* argv[]) {
                   read_pgrid,
                   max_buffer_size,
                   false);
-              while (reader != Reader::end()) {
+              while (reader != Reader<std::complex<float> >::end()) {
                 auto& array = *reader;
                 if (array.buffer()) {
                   if (cb(array, output))

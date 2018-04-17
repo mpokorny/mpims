@@ -25,10 +25,8 @@ endif("${isSystemDir}" STREQUAL "-1")
 add_library(mpims SHARED
   mpims.cc
   MSColumns.cc
-  MSArray.cc
   ReaderBase.cc
-  Reader.cc
-  Writer.cc)
+  Reader.cc)
 target_include_directories(mpims PRIVATE
   ${MPI_CXX_INCLUDE_PATH}
   .)
