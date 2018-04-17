@@ -28,7 +28,7 @@ and supporting flag data is not necessary for that purpose.
 Cheating here a bit, as the following list is mostly based on the current code,
 but this provides a place for future additions.
 
-- Support reading and writing of MS main table data columns using MPI-IO.
+- Support reading and writing of MS main table data using MPI-IO.
 - Support maximum flexibility in access patterns, for both reading and writing; in
   particular, read patterns are independent of write patterns.
 - Support parallelization in a bulk synchronous parallel program framework,
@@ -37,8 +37,8 @@ but this provides a place for future additions.
   user-defined, chunked, round-robin data distribution.
 - Provide an array-oriented style of data access, subject to user-defined buffer
   sizes and access patterns.
-- Provide for asynchronous, non-blocking data column access. Provide
-  thread-safety for threaded user code.
+- Provide for asynchronous, non-blocking data access. Provide thread-safety for
+  threaded user code.
 
 ### Status ###
 
@@ -47,9 +47,9 @@ functionality is currently only available in synchronous mode.
 
 ## Possible extensions ##
 
-- Support access to tiled MS data columns, such as those created by a
+- Support access to tiled MS main table data, such as those created by a
   TiledColumnStMan instance.
-- Support access to non-uniform MS data columns, such as those created by a
+- Support access to non-uniform MS main table data, such as those created by a
   TiledDataStMan instance.
 
 ## Build instructions ##
@@ -69,7 +69,7 @@ created for the main developer's own environment.
 
 ### libmpims
 
-Library for reading and writing (uniform) MS data columns using MPI-IO.
+Library for reading and writing (uniform) MS main table data using MPI-IO.
 
 ### reader-test
 
@@ -88,7 +88,7 @@ caveats apply to this test suite as for *reader-test*.
 
 ### preadcol
 
-An application for reading any uniform MS data column in parallel, with
+An application for reading any uniform MS main table data in parallel, with
 reporting of the time required to complete. Required input is an un-tiled (or
 trivially tiled) MS data column file. The command syntax may be reviewed by
 executing *preadcol* without arguments, or with one of the flags `-h`, `--help`,
@@ -108,16 +108,16 @@ Usage: ./preadcol
   <ms-data-column-file>
 ```
 Required options are `--msshape`, `--order` and `--buffer`.
-* `--msshape`: shape of MS data column; syntax is AX:N[,AX:N]*, where AX is
-  the abbreviation of a column name, and N is number of elements on that axis;
+* `--msshape`: shape of MS data column; syntax is AX:N[,AX:N]*, where AX is the
+  abbreviation of a axis name, and N is number of elements on that axis;
   example: `TIM:360,SPW:16,BAL:378,CH:256,POL:4`
-* `--order`: traversal order of MS data column; syntax is AX[,AX]*, where AX
-  is the abbreviation of a column name; example: `TIM,SPW,BAL,CH,POL`
+* `--order`: traversal order of MS data column; syntax is AX[,AX]*, where AX is
+  the abbreviation of a axis name; example: `TIM,SPW,BAL,CH,POL`
 * `--buffer`: size of the buffer into which data values are read; syntax is size
   in bytes using standard abbreviations (*e.g.*, MB, GiB), or as a number of
   data elements
 * `--grid`: distribution of data across process grid; syntax is AX:N[:B], where
-  AX is that abbreviation of a column name, N is the number of processes along
+  AX is that abbreviation of an axis name, N is the number of processes along
   that axis, and B (default value 1) is the number of axis values in a block;
   distribution is round-robin by block on every distributed axis; example:
   `SPW:16`
@@ -139,7 +139,7 @@ launcher, although for a single process, that is not necessary.
 
 ### pwritecol
 
-An application for writing any uniform MS data column in parallel, with
+An application for writing any uniform MS main table data in parallel, with
 reporting of the time required to complete. The output file is an untiled MS
 data column file. The command line options are fewer than for *preadcol*,
 although for those that are available, their meaning and usage are identical to
