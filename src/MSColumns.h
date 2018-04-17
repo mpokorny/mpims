@@ -13,7 +13,8 @@ enum class MSColumns {
   spectral_window,
   baseline,
   channel,
-  polarization_product
+  polarization_product,
+  complex
 };
 
 const std::string&
