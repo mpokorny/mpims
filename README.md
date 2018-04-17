@@ -153,6 +153,7 @@ Usage: ./pwritecol
   (--order |-o) <traversal-order>
   (--buffer | -b) <buffer-size>
   [(--grid |-g) <distribution>]
+  [(--complex | -c | --real | -r)]
   [(--verbose | -v)]
   [(--datarep | -d) <datarep>]
   <ms-data-column-file>

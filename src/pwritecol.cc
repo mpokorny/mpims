@@ -10,6 +10,7 @@
 #include <string>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <getopt.h>
@@ -26,7 +27,8 @@
 
 using namespace mpims;
 
-std::size_t
+
+std::tuple<std::size_t, bool>
 suffix_multiplier(const std::string& suffix) {
   constexpr std::size_t KB = 1000;
   constexpr std::size_t KiB = 2 << 10;
@@ -34,28 +36,38 @@ suffix_multiplier(const std::string& suffix) {
   constexpr std::size_t MiB = KiB << 10;
   constexpr std::size_t GB = 1000 * MB;
   constexpr std::size_t GiB = MiB << 10;
-  constexpr std::size_t vis = sizeof(std::complex<float>);
+  constexpr std::size_t vis = 1;
 
-  std::unordered_map<std::string, std::size_t> multipliers = {
-    {"k", KB}, {"K", KB}, {"kB", KB}, {"KB", KB},
-    {"ki", KiB}, {"Ki", KiB}, {"kiB", KiB}, {"KiB", KiB},
-    {"m", MB}, {"M", MB}, {"mB", MB}, {"MB", MB},
-    {"mi", MiB}, {"Mi", MiB}, {"miB", MiB}, {"MiB", MiB},
-    {"g", GB}, {"G", GB}, {"gB", GB}, {"GB", GB},
-    {"gi", GiB}, {"Gi", GiB}, {"giB", GiB}, {"GiB", GiB},
-    {"v", vis}, {"V", vis}
+  std::unordered_map<std::string, std::tuple<std::size_t, bool> > multipliers = {
+    {"k", {KB, true}}, {"K", {KB, true}},
+    {"kB", {KB, true}}, {"KB", {KB, true}},
+    {"ki", {KiB, true}}, {"Ki", {KiB, true}},
+    {"kiB", {KiB, true}}, {"KiB", {KiB, true}},
+    {"m", {MB, true}}, {"M", {MB, true}},
+    {"mB", {MB, true}}, {"MB", {MB, true}},
+    {"mi", {MiB, true}}, {"Mi", {MiB, true}},
+    {"miB", {MiB, true}}, {"MiB", {MiB, true}},
+    {"g", {GB, true}}, {"G", {GB, true}},
+    {"gB", {GB, true}}, {"GB", {GB, true}},
+    {"gi", {GiB, true}}, {"Gi", {GiB, true}},
+    {"giB", {GiB, true}}, {"GiB", {GiB, true}},
+    {"v", {vis, false}}, {"V", {vis, false}}
   };
   if (suffix.empty())
-    return vis;
+    return multipliers["v"];
   else
     return multipliers[suffix];
 }
 
-std::size_t
+std::tuple<std::size_t, bool>
 parse_buffer_size(const std::string& bufsz) {
   std::size_t idx;
   std::size_t sz = std::stoull(bufsz, &idx);
-  return sz * suffix_multiplier(bufsz.substr(idx, std::string::npos));
+  std::size_t mult;
+  bool absolute;
+  std::tie(mult, absolute) =
+    suffix_multiplier(bufsz.substr(idx, std::string::npos));
+  return std::make_tuple(sz * mult, absolute);
 }
 
 class ColspecParseError
@@ -169,9 +181,10 @@ parse_options(
   const char *token_sep,
   const char *spec_sep,
   std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
+  bool& complex_valued,
   std::vector<MSColumns>& traversal_order,
   std::unordered_map<MSColumns, DataDistribution>& pgrid,
-  std::size_t& buffer_size,
+  std::tuple<std::size_t, bool>& buffer_size,
   std::string& ms_path,
   std::string& datarep,
   bool& debug_log) {
@@ -179,6 +192,8 @@ parse_options(
   int opt;
   struct option long_options[] = {
     {"msshape", required_argument, &opt, 's'},
+    {"complex", no_argument, nullptr, 'c'},
+    {"real", no_argument, nullptr, 'r'},
     {"order", required_argument, &opt, 'o'},
     {"grid", required_argument, &opt, 'g'},
     {"buffer", required_argument, &opt, 'b'},
@@ -193,6 +208,7 @@ parse_options(
         << "  (--order |-o) <traversal-order>" << std::endl
         << "  (--buffer | -b) <buffer-size>" << std::endl
         << "  [(--grid |-g) <distribution>]" << std::endl
+        << "  [(--complex | -c | --real | -r)]" << std::endl
         << "  [(--verbose | -v)]" << std::endl
         << "  [(--datarep | -d) <datarep>]" << std::endl
         << "  <ms-data-column-file>" << std::endl;
@@ -203,13 +219,14 @@ parse_options(
   }
 
   debug_log = false;
+  complex_valued = true;
   bool got_shape = false, got_order = false, got_buffer = false;
   ms_path = "";
   datarep = "native";
 
   while (1) {
     opt = 0;
-    int c = getopt_long(argc, argv, "s:o:g:b:d:vh", long_options, nullptr);
+    int c = getopt_long(argc, argv, "s:o:g:b:d:crvh", long_options, nullptr);
 
     if (c == -1) {
       ms_path = argv[optind];
@@ -269,6 +286,14 @@ parse_options(
       datarep = val;
       break;
 
+    case 'c':
+      complex_valued = true;
+      break;
+
+    case 'r':
+      complex_valued = false;
+      break;
+
     case 'v':
       debug_log = true;
       break;
@@ -288,24 +313,104 @@ parse_options(
   return true;
 }
 
+bool
+validate_options(
+  const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
+  bool complex_valued,
+  const std::vector<MSColumns>& traversal_order,
+  const std::string& datarep) {
+
+  static std::unordered_set<std::string> valid_datarep {
+    "native",
+      "internal",
+      "external32" };
+
+  bool result = true;
+
+  bool complex_in_ms_shape =
+    std::any_of(
+      std::begin(ms_shape),
+      std::end(ms_shape),
+      [](const auto& ax) {
+        return ax.id() == MSColumns::complex;
+      });
+  bool complex_in_traversal_order =
+    std::any_of(
+      std::begin(traversal_order),
+      std::end(traversal_order),
+      [](const auto& col) {
+        return col == MSColumns::complex;
+      });
+
+  if (!complex_valued) {
+    if (complex_in_ms_shape || complex_in_traversal_order) {
+      std::cerr << "real-valued MS data cannot have '"
+                << mscol_nickname(MSColumns::complex)
+                << "' element in 'msshape' or 'order' option values"
+                << std::endl;
+      result = false;
+    }
+  } else {
+    if (complex_in_ms_shape != complex_in_traversal_order) {
+      std::cerr << "'"
+                << mscol_nickname(MSColumns::complex)
+                << "' element must not appear in only one of "
+                << "'msshape' and 'order' option values"
+                << std::endl;
+      result = false;
+    }
+  }
+
+  if (valid_datarep.count(datarep) == 0) {
+    std::cerr << "unsupported 'datarep' value" << std::endl;
+    result = false;
+  }
+
+  return result;
+}
+
+template <typename T>
 void
 write_buffer(
-  std::optional<std::complex<float>*> buffer,
+  std::optional<T*> buffer,
   std::size_t buffer_length,
-  std::complex<float>& val) {
+  const T& val) {
 
   if (!buffer)
     return;
   auto buff = buffer.value();
-  while (buffer_length-- > 0) {
+  while (buffer_length-- > 0)
     *buff++ = val;
-    val += std::complex<float>(31.0, 17.0);
+}
+
+template <typename T>
+unsigned
+write_loop(
+  Writer<T>&& writer,
+  const std::optional<std::size_t>& num_outer,
+  T& val,
+  const T& addend) {
+
+  while ((!num_outer && writer != Writer<T>::end())
+         || (num_outer
+             && (writer.outer_min_index().value_or(num_outer.value())
+                 < num_outer.value()))) {
+    auto buffer_length = writer.buffer_length();
+    if (buffer_length > 0) {
+      MSArray<T> array(buffer_length);
+      write_buffer(array.buffer(), buffer_length, val);
+      val += addend;
+      *writer = std::move(array);
+    }
+    ++writer;
   }
+  return writer.num_ranks();
 }
 
 unsigned
 write_all(
   std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
+  bool handle_as_complex,
   std::vector<MSColumns>& traversal_order,
   std::optional<std::size_t> num_outer,
   std::unordered_map<MSColumns, DataDistribution>& pgrid,
@@ -316,32 +421,43 @@ write_all(
 
   unsigned result = 0;
 
-  std::complex<float> val {1.0, 53.0};
   try {
-    auto writer =
-      CxFltWriter::begin(
-        ms_path,
-        datarep,
-        (num_outer ? AMode::WriteOnly : AMode::ReadWrite),
-        MPI_COMM_WORLD,
-        MPI_INFO_NULL,
-        ms_shape,
-        traversal_order,
-        pgrid,
-        buffer_size,
-        debug_log);
-    result = writer.num_ranks();
-    while ((!num_outer && writer != CxFltWriter::end())
-           || (num_outer
-               && (writer.outer_min_index().value_or(num_outer.value())
-                   < num_outer.value()))) {
-      auto buffer_length = writer.buffer_length();
-      if (buffer_length > 0) {
-        CxFltMSArray array(buffer_length);
-        write_buffer(array.buffer(), buffer_length, val);
-        *writer = std::move(array);
-      }
-      ++writer;
+    if (handle_as_complex) {
+      std::complex<float> val{1.0, 53.0}, addend{31.0, 17.0};
+      result =
+        write_loop(
+          CxFltWriter::begin(
+            ms_path,
+            datarep,
+            (num_outer ? AMode::WriteOnly : AMode::ReadWrite),
+            MPI_COMM_WORLD,
+            MPI_INFO_NULL,
+            ms_shape,
+            traversal_order,
+            pgrid,
+            buffer_size,
+            debug_log),
+          num_outer,
+          val,
+          addend);
+    } else {
+      float val(1.0), addend(31.0);
+      result =
+        write_loop(
+          FltWriter::begin(
+            ms_path,
+            datarep,
+            (num_outer ? AMode::WriteOnly : AMode::ReadWrite),
+            MPI_COMM_WORLD,
+            MPI_INFO_NULL,
+            ms_shape,
+            traversal_order,
+            pgrid,
+            buffer_size,
+            debug_log),
+          num_outer,
+          val,
+          addend);
     }
   } catch (std::exception& e) {
     std::cerr << "Execution failed: " << e.what() << std::endl;
@@ -419,9 +535,10 @@ main(int argc, char *argv[]) {
   const char spec_separator[] = ":";
 
   std::vector<ColumnAxisBase<MSColumns> > ms_shape;
+  bool complex_valued;
   std::vector<MSColumns> traversal_order;
   std::unordered_map<MSColumns, DataDistribution> pgrid;
-  std::size_t max_buffer_size;
+  std::tuple<std::size_t, bool> max_buffer_size;
   std::string ms_path;
   std::string datarep;
   bool debug_log;
@@ -433,6 +550,7 @@ main(int argc, char *argv[]) {
       token_separator,
       spec_separator,
       ms_shape,
+      complex_valued,
       traversal_order,
       pgrid,
       max_buffer_size,
@@ -440,7 +558,27 @@ main(int argc, char *argv[]) {
       datarep,
       debug_log);
 
+  if (options_ok)
+    options_ok =
+      validate_options(ms_shape, complex_valued, traversal_order, datarep);
+
   if (options_ok) {
+
+    std::size_t buffer_size;
+    bool buffer_size_is_absolute;
+    std::tie(buffer_size, buffer_size_is_absolute) = max_buffer_size;
+    bool handle_as_complex =
+      std::none_of(
+        std::begin(traversal_order),
+        std::end(traversal_order),
+        [](const auto& col) {
+          return col == MSColumns::complex;
+        })
+      && complex_valued;
+    if (!buffer_size_is_absolute)
+      buffer_size *=
+        (handle_as_complex ? sizeof(std::complex<float>) : sizeof(float));
+
     MPI_Init(&argc, &argv);
     set_throw_exception_errhandler(MPI_COMM_WORLD);
 
@@ -468,10 +606,11 @@ main(int argc, char *argv[]) {
           unsigned n =
             write_all(
               ms_shape,
+              handle_as_complex,
               traversal_order,
               num_outer,
               pgrid,
-              max_buffer_size,
+              buffer_size,
               ms_path,
               datarep,
               debug_log);
