@@ -101,6 +101,7 @@ Usage: ./preadcol
   (--order |-o) <traversal-order>
   (--buffer | -b) <buffer-size>
   [(--grid |-g) <distribution>]
+  [(--complex | -c | --real | -r)]
   [((--transpose | -t) | --no-transpose)]
   [(--verbose | -v)]
   [(--datarep | -d) <datarep>]
@@ -120,6 +121,9 @@ Required options are `--msshape`, `--order` and `--buffer`.
   that axis, and B (default value 1) is the number of axis values in a block;
   distribution is round-robin by block on every distributed axis; example:
   `SPW:16`
+* `--complex`, `--real`: type of data values in file (note that complex values
+  may be accessed as pairs of real values by including `CPX:2` in
+  `--msshape` and `CPX` in `--order`)
 * `--transpose`: boolean flag to specify whether values in the read buffer are
   transposed (relative to MS order) to match the traversal order or not; note
   that the value of this flag does *not* affect the traversal order, only the
