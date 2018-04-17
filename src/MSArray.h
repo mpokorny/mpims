@@ -3,6 +3,7 @@
 #define MS_ARRAY_H_
 
 #include <algorithm>
+#include <complex>
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -242,6 +243,14 @@ void
 swap(MSArray<T>& array1, MSArray<T>& array2) {
   array1.swap(array2);
 }
+
+using CxFltMSArray = MSArray<std::complex<float> >;
+
+using CxDblMSArray = MSArray<std::complex<double> >;
+
+using FltMSArray = MSArray<float>;
+
+using DblMSArray = MSArray<double>;
 
 }
 

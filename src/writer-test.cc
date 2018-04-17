@@ -137,7 +137,7 @@ checkit(
 }
 
 bool
-cb(const MSArray<std::complex<float> >& array, ostringstream& output) {
+cb(const CxFltMSArray& array, ostringstream& output) {
 
   if (!array.buffer())
     return false;
@@ -359,8 +359,8 @@ main(int argc, char* argv[]) {
             MPI_COMM_WORLD);
 
           {
-            Writer<std::complex<float> > writer =
-              Writer<std::complex<float> >::begin(
+            CxFltWriter writer =
+              CxFltWriter::begin(
                 path,
                 "external32",
                 amode,
@@ -370,7 +370,7 @@ main(int argc, char* argv[]) {
                 tvo,
                 pgrid,
                 bs);
-            while (writer != Writer<std::complex<float> >::end()) {
+            while (writer != CxFltWriter::end()) {
               bool done = false;
               auto indices = writer.indices();
               assert(indices.size() == dims.size() || indices.size() == 0);
@@ -378,7 +378,7 @@ main(int argc, char* argv[]) {
                   || indices.size() == 0
                   || indices[0].min_index() < dims[ms_top]) {
                 if (writer.buffer_length() > 0) {
-                  MSArray<std::complex<float> > array(writer.buffer_length());
+                  CxFltMSArray array(writer.buffer_length());
                   write_buffer(array.buffer(), indices);
                   *writer = move(array);
                 }

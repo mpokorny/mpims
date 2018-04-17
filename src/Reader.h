@@ -1360,6 +1360,14 @@ template <> MPI_Datatype Reader<double>::value_datatype;
 
 template <> std::size_t Reader<double>::value_size;
 
+using CxFltReader = Reader<std::complex<float> >;
+
+using CxDblReader = Reader<std::complex<double> >;
+
+using FltReader = Reader<float>;
+
+using DblReader = Reader<double>;
+
 } // end namespace mpims
 
 #endif // READER_H_

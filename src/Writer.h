@@ -274,6 +274,14 @@ swap(Writer<T>& w1, Writer<T>& w2) {
   w1.swap(w2);
 }
 
+using CxFltWriter = Writer<std::complex<float> >;
+
+using CxDblWriter = Writer<std::complex<double> >;
+
+using FltWriter = Writer<float>;
+
+using DblWriter = Writer<double>;
+
 } // end namespace mpims
 
 #endif // WRITER_H_

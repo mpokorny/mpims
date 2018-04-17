@@ -325,7 +325,7 @@ read_all(
 
   try {
     auto reader =
-      Reader<std::complex<float> >::begin(
+      CxFltReader::begin(
         ms_path,
         datarep,
         MPI_COMM_WORLD,
@@ -338,7 +338,7 @@ read_all(
         readahead,
         debug_log);
     result = reader.num_ranks();
-    while (reader != Reader<std::complex<float> >::end()) {
+    while (reader != CxFltReader::end()) {
       auto array __attribute__((unused)) = *reader;
       ++reader;
     }
