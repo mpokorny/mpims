@@ -472,7 +472,31 @@ protected:
     std::shared_ptr<ArrayIndexer<MSColumns> >& ms_indexer,
     std::size_t& buffer_size,
     TraversalState& traversal_state) {
-  
+
+    auto complex_ms_axis =
+      std::find_if(
+        std::begin(ms_shape),
+        std::end(ms_shape),
+        [](const auto& ax) {
+          return ax.id() == MSColumns::complex;
+        });
+
+    bool traversal_has_complex =
+      std::any_of(
+        std::begin(traversal_order),
+        std::end(traversal_order),
+        [](const auto& col) {
+          return col == MSColumns::complex;
+        });
+
+    if (is_complex) {
+      if (traversal_has_complex || complex_ms_axis != std::end(ms_shape))
+        throw ComplexAxisError();
+    } else if (complex_ms_axis != std::end(ms_shape)
+               && complex_ms_axis->length() != 2) {
+      throw ComplexAxisLengthError();
+    }
+
     // indeterminate axis in MS is allowed only at the outermost axis
     if (
       std::any_of(
@@ -1296,6 +1320,8 @@ protected:
 
   static std::size_t value_size;
 
+  static bool is_complex;
+
 private:
 
   MPIState m_mpi_state;
@@ -1344,29 +1370,25 @@ swap(Reader<T>& r1, Reader<T>& r2) {
   r1.swap(r2);
 }
 
-template <> MPI_Datatype Reader<std::complex<float> >::value_datatype;
-
-template <> std::size_t Reader<std::complex<float> >::value_size;
-
-template <> MPI_Datatype Reader<float>::value_datatype;
-
-template <> std::size_t Reader<float>::value_size;
-
-template <> MPI_Datatype Reader<std::complex<double> >::value_datatype;
-
-template <> std::size_t Reader<std::complex<double> >::value_size;
-
-template <> MPI_Datatype Reader<double>::value_datatype;
-
-template <> std::size_t Reader<double>::value_size;
-
 using CxFltReader = Reader<std::complex<float> >;
-
-using CxDblReader = Reader<std::complex<double> >;
+template <> MPI_Datatype CxFltReader::value_datatype;
+template <> std::size_t CxFltReader::value_size;
+template <> bool CxFltReader::is_complex;
 
 using FltReader = Reader<float>;
+template <> MPI_Datatype FltReader::value_datatype;
+template <> std::size_t FltReader::value_size;
+template <> bool FltReader::is_complex;
+
+using CxDblReader = Reader<std::complex<double> >;
+template <> MPI_Datatype CxDblReader::value_datatype;
+template <> std::size_t CxDblReader::value_size;
+template <> bool CxDblReader::is_complex;
 
 using DblReader = Reader<double>;
+template <> MPI_Datatype DblReader::value_datatype;
+template <> std::size_t DblReader::value_size;
+template <> bool DblReader::is_complex;
 
 } // end namespace mpims
 

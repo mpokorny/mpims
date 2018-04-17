@@ -25,8 +25,7 @@ struct ReaderBase {
     : std::runtime_error {
   public:
     explicit IndeterminateArrayError()
-      : std::runtime_error("indeterminate internal array axis") {
-    }
+      : std::runtime_error("indeterminate internal array axis") {}
   };
 
   // Traversal of an indeterminate MS with the top traversal axis not equal to
@@ -36,8 +35,25 @@ struct ReaderBase {
   public:
     explicit IndeterminateArrayTraversalError()
       : std::runtime_error(
-        "top of traversal order not the indeterminate axis") {
-    }
+        "top of traversal order not the indeterminate axis") {}
+  };
+
+  // Complex axis length cannot be anything but two.
+  class ComplexAxisLengthError
+    : std::runtime_error {
+  public:
+    explicit ComplexAxisLengthError()
+      : std::runtime_error("complex axis length is not two") {}
+  };
+
+  // Specification of the "complex" axis is only allowed when the Reader/Writer
+  // template type is not complex-valued.
+  class ComplexAxisError
+    : std::runtime_error {
+  public:
+    explicit ComplexAxisError()
+      : std::runtime_error(
+        "complex axis cannot be used with complex-valued data type") {}
   };
 
   static void
