@@ -175,7 +175,6 @@ parse_options(
   std::string& ms_path,
   std::string& datarep,
   bool& ms_buffer_order,
-  bool& readahead,
   bool& debug_log) {
 
   int opt;
@@ -186,7 +185,6 @@ parse_options(
     {"buffer", required_argument, &opt, 'b'},
     {"transpose", no_argument, nullptr, 't'},
     {"no-transpose", no_argument, nullptr, -'t'},
-    {"readahead", no_argument, nullptr, 'r'},
     {"datarep", required_argument, &opt, 'd'},
     {"verbose", no_argument, nullptr, 'v'},
     {"help", optional_argument, nullptr, 'h'}
@@ -199,7 +197,6 @@ parse_options(
         << "  (--buffer | -b) <buffer-size>" << std::endl
         << "  [(--grid |-g) <distribution>]" << std::endl
         << "  [((--transpose | -t) | --no-transpose)]" << std::endl
-        << "  [(--readahead | -r)]" << std::endl
         << "  [(--verbose | -v)]" << std::endl
         << "  [(--datarep | -d) <datarep>]" << std::endl
         << "  <ms-data-column-file>" << std::endl;
@@ -211,7 +208,6 @@ parse_options(
 
   ms_buffer_order = true;
   debug_log = false;
-  readahead = false;
   bool got_shape = false, got_order = false, got_buffer = false;
   ms_path = "";
   datarep = "native";
@@ -286,10 +282,6 @@ parse_options(
       ms_buffer_order = true;
       break;
 
-    case 'r':
-      readahead = true;
-      break;
-
     case 'v':
       debug_log = true;
       break;
@@ -318,7 +310,6 @@ read_all(
   std::string ms_path,
   std::string datarep,
   bool ms_buffer_order,
-  bool readahead,
   bool debug_log) {
 
   unsigned result = 0;
@@ -335,7 +326,7 @@ read_all(
         ms_buffer_order,
         pgrid,
         buffer_size,
-        readahead,
+        true,
         debug_log);
     result = reader.num_ranks();
     while (reader != CxFltReader::end()) {
@@ -412,7 +403,6 @@ main(int argc, char *argv[]) {
   std::size_t max_buffer_size;
   std::string ms_path;
   bool ms_buffer_order;
-  bool readahead;
   std::string datarep;
   bool debug_log;
 
@@ -429,7 +419,6 @@ main(int argc, char *argv[]) {
       ms_path,
       datarep,
       ms_buffer_order,
-      readahead,
       debug_log);
 
   if (options_ok) {
@@ -451,7 +440,6 @@ main(int argc, char *argv[]) {
             ms_path,
             datarep,
             ms_buffer_order,
-            readahead,
             debug_log);
           MPI_Barrier(MPI_COMM_WORLD);
           return n;
