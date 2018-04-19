@@ -566,7 +566,7 @@ protected:
     }
     int rank = 0;
     if (reduced_comm != MPI_COMM_NULL) {
-      // set_throw_exception_errhandler(reduced_comm);
+      set_throw_exception_errhandler(reduced_comm);
       MPI_Comm_rank(reduced_comm, &rank);
     }
 
@@ -671,7 +671,7 @@ protected:
       MPI_Info_dup(info, &priv_info);
     if (reduced_comm != MPI_COMM_NULL) {
       MPI_File_open(reduced_comm, path.c_str(), amode, priv_info, &file);
-      // set_throw_exception_errhandler(file);
+      set_throw_exception_errhandler(file);
       if (debug_log && rank == 0) {
         MPI_Info info_used;
         MPI_File_get_info(file, &info_used);
