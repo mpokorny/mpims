@@ -301,17 +301,47 @@ ReaderBase::vector_datatype(
     terminal_block_len = block_len;
   }
   if (nb * block_len > 1 || offset > 0) {
-    if (block_len == terminal_block_len && offset == 0) {
+    if (block_len == terminal_block_len) {
       if (block_len == stride) {
-        if (debug_log)
-          oss << "; contiguous " << nb * block_len;
-        MPI_Type_contiguous(nb * block_len, *dt, result_dt.get());
+        if (offset == 0) {
+          if (debug_log)
+            oss << "; contiguous " << nb * block_len;
+          MPI_Type_contiguous(nb * block_len, *dt, result_dt.get());
+        } else {
+          if (debug_log)
+            oss << "; idxblk 1, " << nb * block_len
+                << ", " << offset;
+          int displacements = offset;
+          MPI_Type_create_indexed_block(
+            1,
+            nb * block_len,
+            &displacements,
+            *dt,
+            result_dt.get());
+        }
       } else {
-        if (debug_log)
-          oss << "; vector " << nb
-              << "," << block_len
-              << "," << stride;
-        MPI_Type_vector(nb, block_len, stride, *dt, result_dt.get());
+        if (offset == 0) {
+          if (debug_log)
+            oss << "; vector " << nb
+                << "," << block_len
+                << "," << stride;
+          MPI_Type_vector(nb, block_len, stride, *dt, result_dt.get());
+        } else {
+          if (debug_log)
+            oss << "; idxblk " << nb
+                << ", " << block_len
+                << ", " << offset
+                << ", " << stride;
+          auto displacements = std::make_unique<int[]>(nb);
+          for (std::size_t i = 0; i < nb; ++i)
+            displacements[i] = offset + i * stride;
+          MPI_Type_create_indexed_block(
+            nb,
+            block_len,
+            displacements.get(),
+            *dt,
+            result_dt.get());
+        }
       }
     } else {
       auto blocklengths = std::make_unique<int[]>(nb);
