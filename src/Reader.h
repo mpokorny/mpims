@@ -1139,17 +1139,12 @@ protected:
     }
 
     if (traversal_state.at_end()) {
-      MPI_Offset start;
-      if (!m_deferred_fileview_args && count > 0)
-        MPI_File_get_position(file, &start);
-      else
-        start = 0;
 
       MPI_Status status;
-      return MSArray(
+      return MSArray<T>(
         std::move(blocks),
         std::move(buffer),
-        start,
+        std::nullopt,
         count,
         dt,
         std::move(status),
@@ -1167,7 +1162,7 @@ protected:
       if (!nonblocking) {
         MPI_Status status;
         MPI_File_read_all(file, buffer.get(), count, *dt, &status);
-        MSArray result(
+        MSArray<T> result(
           std::move(blocks),
           std::move(buffer),
           start,
@@ -1180,7 +1175,7 @@ protected:
       } else {
         MPI_Request request;
         MPI_File_iread_all(file, buffer.get(), count, *dt, &request);
-        return MSArray(
+        return MSArray<T>(
           std::move(blocks),
           std::move(buffer),
           start,

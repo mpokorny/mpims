@@ -103,6 +103,9 @@ public:
     if (handles->comm == MPI_COMM_NULL)
       return;
 
+    std::optional<MPI_Offset> offset =
+      m_array ? getv().offset() : std::nullopt;
+
     if (m_reader.m_debug_log) {
       auto blocks = indices();
       std::ostringstream oss;
@@ -125,15 +128,16 @@ public:
             });
           oss << "]";
         });
-      oss << " at " << (m_array ? std::to_string(getv().offset()) : "--");
+      oss << " at "
+          << (offset ? std::to_string(offset.value()) : "EOF");
       oss << std::endl;
       std::clog << oss.str();
     }
 
     m_reader.extend();
     m_reader.set_deferred_fileview();
-    if (m_array)
-      MPI_File_seek(handles->file, getv().offset(), MPI_SEEK_SET);
+    if (offset)
+      MPI_File_seek(handles->file, offset.value(), MPI_SEEK_SET);
     std::shared_ptr<const MPI_Datatype> dt;
     unsigned count;
     std::tie(dt, count) = m_reader.m_traversal_state.buffer_datatype();

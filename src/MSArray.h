@@ -23,14 +23,12 @@ template <typename T>
 struct MSArray {
 
   MSArray()
-    : m_offset(0)
-    , m_count(0)
+    : m_count(0)
     , m_req_or_st(std::in_place_index<1>) {
   }
 
   MSArray(std::size_t len)
     : m_buffer(reinterpret_cast<T *>(::operator new(len * sizeof(T))))
-    , m_offset(0)
     , m_count(0)
     , m_req_or_st(std::in_place_index<1>) {
   }
@@ -39,7 +37,6 @@ struct MSArray {
     std::vector<IndexBlockSequence<MSColumns> >&& blocks,
     std::optional<int> rank=std::nullopt)
     : m_blocks(std::move(blocks))
-    , m_offset(0)
     , m_count(0)
     , m_req_or_st(std::in_place_index<1>)
     , m_rank(rank) {
@@ -48,14 +45,14 @@ struct MSArray {
   MSArray(
     std::vector<IndexBlockSequence<MSColumns> >&& blocks,
     std::unique_ptr<T>&& buffer,
-    MPI_Offset offset,
+    std::optional<MPI_Offset>&& offset,
     int count,
     std::shared_ptr<const MPI_Datatype>& datatype,
     MPI_Request&& request,
     std::optional<int> rank=std::nullopt)
     : m_blocks(std::move(blocks))
     , m_buffer(std::move(buffer))
-    , m_offset(offset)
+    , m_offset(std::move(offset))
     , m_count(count)
     , m_datatype(datatype)
     , m_req_or_st(std::move(request))
@@ -65,14 +62,14 @@ struct MSArray {
   MSArray(
     std::vector<IndexBlockSequence<MSColumns> >&& blocks,
     std::unique_ptr<T>&& buffer,
-    MPI_Offset offset,
+    std::optional<MPI_Offset>&& offset,
     int count,
     std::shared_ptr<const MPI_Datatype>& datatype,
     MPI_Status&& status,
     std::optional<int> rank=std::nullopt)
     : m_blocks(std::move(blocks))
     , m_buffer(std::move(buffer))
-    , m_offset(offset)
+    , m_offset(std::move(offset))
     , m_count(count)
     , m_datatype(datatype)
     , m_req_or_st(std::move(status))
@@ -184,7 +181,7 @@ struct MSArray {
     return m_buffer ? std::make_optional(m_buffer.get()) : std::nullopt;
   };
 
-  MPI_Offset
+  std::optional<MPI_Offset>
   offset() const {
     return m_offset;
   }
@@ -227,7 +224,7 @@ private:
 
   mutable std::unique_ptr<T> m_buffer;
 
-  MPI_Offset m_offset;
+  std::optional<MPI_Offset> m_offset;
 
   int m_count;
 
