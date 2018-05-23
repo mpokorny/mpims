@@ -27,6 +27,11 @@
 #include <TraversalState.h>
 #include <ReaderBase.h>
 
+// TODO: unless we make a single, large contiguous datatype for the fileview,
+// appending to the file fails in some cases...why?
+// #define MPIMS_READER_BIG_CONTIGUOUS_COUNT 10000
+#undef MPIMS_READER_BIG_CONTIGUOUS_COUNT
+
 namespace mpims {
 
 class IterParams;
@@ -1072,12 +1077,13 @@ protected:
 
     // TODO: unless we make a single, large contiguous datatype, appending to the
     // file fails in some cases...why?
-#define BIG_CONTIGUOUS_COUNT 10000
+#ifdef MPIMS_READER_BIG_CONTIGUOUS_COUNT
     if (indeterminate_dt_count) {
       auto dt = std::move(result);
       result = datatype();
-      MPI_Type_contiguous(BIG_CONTIGUOUS_COUNT, *dt, result.get());
+      MPI_Type_contiguous(MPIMS_READER_BIG_CONTIGUOUS_COUNT, *dt, result.get());
     }
+#endif
 
     MPI_Type_commit(result.get());
 
