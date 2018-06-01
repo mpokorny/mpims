@@ -64,8 +64,11 @@ class DataDistributionFactory;
 //
 // use DataDistributionFactory to create instances
 //
-class DataDistribution {
+class DataDistribution
+  : public std::enable_shared_from_this<DataDistribution> {
+
 public:
+
   class Iterator
     : public std::iterator<std::input_iterator_tag, std::size_t> {
 
@@ -156,15 +159,24 @@ public:
     std::optional<std::tuple<std::size_t, std::size_t> > >(const S&)>
   generator_t;
 
-  friend std::unique_ptr<GeneratorDataDistribution>
-  std::make_unique<GeneratorDataDistribution>(const generator_t&, S&&);
+  // Note that the following static constructor methods return a new instance,
+  // but in a shared_ptr rather than a unique_ptr. The reason is that an
+  // Iterator instance pointer returned from DataDistribution::begin() holds a
+  // pointer to the generator function in the DataDistribution instance, and
+  // this pointer to the generator is implemented using an aliased shared_ptr.
+  // This eliminates the need for users to explicitly maintain a reference to
+  // the DataDistribution over the lifetime of an Iterator.
 
-  static std::unique_ptr<DataDistribution>
+  static std::shared_ptr<DataDistribution>
+  make(const generator_t& generator, const S& state) {
+    return
+      std::make_shared<GeneratorDataDistribution>(generator, state);
+  }
+
+  static std::shared_ptr<DataDistribution>
   make(const generator_t& generator, S&& state) {
     return
-      std::make_unique<GeneratorDataDistribution>(
-        generator,
-        std::forward<S>(state));
+      std::make_shared<GeneratorDataDistribution>(generator, std::move(state));
   }
 
   GeneratorDataDistribution&
@@ -186,10 +198,16 @@ public:
   class GeneratorIterator
     : public Iterator {
 
-    friend std::unique_ptr<GeneratorIterator>
-    std::make_unique<GeneratorIterator>(const generator_t&, const S&);
-
   public:
+
+    GeneratorIterator(
+      const std::shared_ptr<const generator_t>& generator,
+      const S& state)
+      : m_generator(generator)
+      , m_block_offset(0) {
+
+      std::tie(m_next_state, m_block) = (*m_generator)(state);
+    }
 
     std::size_t
     operator*() const override {
@@ -203,7 +221,7 @@ public:
       std::size_t b0, blen;
       std::tie(b0, blen) = m_block.value();
       if (++m_block_offset == blen) {
-        std::tie(m_next_state, m_block) = m_generator(m_next_state);
+        std::tie(m_next_state, m_block) = (*m_generator)(m_next_state);
         assert(!m_block || std::get<0>(m_block.value()) >= b0 + blen);
         m_block_offset = 0;
       }
@@ -215,18 +233,9 @@ public:
       return !m_block;
     }
 
-  protected:
-
-    GeneratorIterator(const generator_t& generator, const S& state)
-      : m_generator(generator)
-      , m_block_offset(0) {
-
-      std::tie(m_next_state, m_block) = m_generator(state);
-    }
-
   private:
 
-    generator_t m_generator;
+    std::shared_ptr<const generator_t> m_generator;
     S m_next_state;
     std::optional<std::tuple<std::size_t, std::size_t> > m_block;
     std::size_t m_block_offset;
@@ -234,7 +243,8 @@ public:
 
   std::unique_ptr<Iterator>
   begin() const override {
-    return std::make_unique<GeneratorIterator>(m_generator, m_init_state);
+    std::shared_ptr<const generator_t> gen(shared_from_this(), &m_generator);
+    return std::make_unique<GeneratorIterator>(gen, m_init_state);
   }
 
 protected:
@@ -246,11 +256,18 @@ protected:
     swap(m_init_state, other.m_init_state);
   }
 
-private:
+public:
 
+  // use of the static make() functions is preferred to use of the following
+  // constructors
   GeneratorDataDistribution(const generator_t& generator, const S& state)
     : m_generator(generator)
     , m_init_state(state) {
+  }
+
+  GeneratorDataDistribution(const generator_t& generator, S&& state)
+    : m_generator(generator)
+    , m_init_state(std::move(state)) {
   }
 
   GeneratorDataDistribution(const GeneratorDataDistribution& other)
@@ -263,6 +280,8 @@ private:
     , m_init_state(std::move(other).m_init_state) {
   }
 
+private:
+
   generator_t m_generator;
 
   S m_init_state;
@@ -274,7 +293,7 @@ public:
 
   // block-cyclic data distribution
   //
-  static std::unique_ptr<DataDistribution>
+  static std::shared_ptr<DataDistribution>
   cyclic(
     std::size_t axis_length,
     std::size_t offset,
@@ -293,7 +312,7 @@ public:
 
   // (enumerated) block sequence data distribution
   //
-  static std::unique_ptr<DataDistribution>
+  static std::shared_ptr<DataDistribution>
   block_sequence(
     const std::vector<std::tuple<std::size_t, std::size_t> >& blocks) {
 
@@ -311,7 +330,7 @@ public:
       std::is_convertible<
         typename std::iterator_traits<InputIterator>::value_type,
         std::tuple<std::size_t, std::size_t> >::value>::type>
-  static std::unique_ptr<DataDistribution>
+  static std::shared_ptr<DataDistribution>
   block_iterator(InputIterator&& begin, InputIterator&& end) {
 
     return
@@ -324,7 +343,7 @@ public:
   // generic data distribution factory method
   //
   template <typename S>
-  static std::unique_ptr<DataDistribution>
+  static std::shared_ptr<DataDistribution>
   block_generator(
     const typename BlockGenerator<S>::generator_t& generator,
     S&& init_state) {
