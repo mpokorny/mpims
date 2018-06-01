@@ -27,10 +27,10 @@ template <
     std::is_convertible<
       typename std::iterator_traits<InputIterator>::value_type,
       std::size_t>::value>::type>
-std::vector<std::tuple<std::size_t, std::size_t> >
+std::vector<block_t>
 blocks(const InputIterator& first, const InputIterator& last) {
-  std::vector<std::tuple<std::size_t, std::size_t> > result;
-  std::optional<std::tuple<std::size_t, std::size_t> > block;
+  std::vector<block_t> result;
+  std::optional<block_t> block;
   std::for_each(
     first,
     last,
@@ -94,7 +94,7 @@ public:
       return result;
     }
 
-    std::vector<std::tuple<std::size_t, std::size_t> >
+    std::vector<block_t>
     take_blocked(std::size_t n = 1) {
       auto seq = take(n);
       return mpims::blocks(std::begin(seq), std::end(seq));
@@ -110,7 +110,7 @@ public:
       return result;
     }
 
-    std::vector<std::tuple<std::size_t, std::size_t> >
+    std::vector<block_t>
     take_all_blocked() {
       auto seq = take_all();
       return mpims::blocks(std::begin(seq), std::end(seq));
@@ -120,7 +120,7 @@ public:
   virtual std::unique_ptr<Iterator>
   begin() const = 0;
 
-  std::vector<std::tuple<std::size_t, std::size_t> >
+  std::vector<block_t>
   blocks() const {
     return begin()->take_all_blocked();
   }
@@ -153,10 +153,7 @@ class GeneratorDataDistribution
 
 public:
 
-  typedef std::function<
-  std::tuple<
-    S,
-    std::optional<std::tuple<std::size_t, std::size_t> > >(const S&)>
+  typedef std::function<std::tuple<S, std::optional<block_t> >(const S&)>
   generator_t;
 
   // Note that the following static constructor methods return a new instance,
@@ -237,7 +234,7 @@ public:
 
     std::shared_ptr<const generator_t> m_generator;
     S m_next_state;
-    std::optional<std::tuple<std::size_t, std::size_t> > m_block;
+    std::optional<block_t> m_block;
     std::size_t m_block_offset;
   };
 
@@ -293,33 +290,63 @@ public:
 
   // block-cyclic data distribution
   //
+  // * an empty 'axis_length' is used to indicate indefinite repetition
+  //
   static std::shared_ptr<DataDistribution>
   cyclic(
-    std::size_t axis_length,
     std::size_t offset,
     std::size_t block_length,
-    std::size_t group_size) {
+    std::size_t group_size,
+    std::optional<std::size_t> axis_length) {
 
     return
       GeneratorDataDistribution<CyclicGenerator::State>::make(
         CyclicGenerator::apply,
         CyclicGenerator::State{
-          axis_length,
-            block_length,
+          block_length,
             block_length * group_size,
-            std::min(offset, axis_length)});
+            std::min(offset, axis_length.value_or(offset)),
+            axis_length});
   }
 
   // (enumerated) block sequence data distribution
   //
+  // * a block of length 0 is used to indicate the start of a repetition (any
+  //   blocks in the sequence following such a block are ignored)
+  //
+  // * an empty 'axis_length' is used to indicate indefinite repetition
+  //
+  // * an empty 'axis length' without a block of length 0 implies an axis length
+  //   equal to the smallest index beyond the block sequence
+  //
   static std::shared_ptr<DataDistribution>
   block_sequence(
-    const std::vector<std::tuple<std::size_t, std::size_t> >& blocks) {
+    const std::vector<block_t>& blocks,
+    std::optional<std::size_t> axis_length) {
+
+    auto brep =
+      std::find_if(
+        std::begin(blocks),
+        std::end(blocks),
+        [](auto& b) { return std::get<1>(b) == 0; });
+
+    if (!axis_length && brep == std::end(blocks) && blocks.size() > 0) {
+      std::size_t b0, blen;
+      std::tie(b0, blen) = blocks[blocks.size() - 1];
+      axis_length = b0 + blen;
+    };
+
+    if (brep != std::end(blocks))
+      ++brep;
 
     return
       GeneratorDataDistribution<BlockSequenceGenerator::State>::make(
         BlockSequenceGenerator::apply,
-        BlockSequenceGenerator::State{blocks, 0});
+        BlockSequenceGenerator::State{
+          std::vector<block_t>(std::begin(blocks), brep),
+            axis_length,
+            0,
+            0});
   }
 
   // block iterator data distribution
@@ -329,7 +356,7 @@ public:
     class = typename std::enable_if<
       std::is_convertible<
         typename std::iterator_traits<InputIterator>::value_type,
-        std::tuple<std::size_t, std::size_t> >::value>::type>
+        block_t>::value>::type>
   static std::shared_ptr<DataDistribution>
   block_iterator(InputIterator&& begin, InputIterator&& end) {
 

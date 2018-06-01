@@ -12,6 +12,8 @@
 
 namespace mpims {
 
+typedef std::tuple<std::size_t, std::size_t> block_t;
+
 // CyclicGenerator
 //
 // generator for cyclic distribution of index blocks
@@ -21,27 +23,29 @@ class CyclicGenerator {
 public:
 
   struct State {
-    std::size_t axis_length;
     std::size_t block_length;
     std::size_t group_length;
     std::size_t index;
+    std::optional<std::size_t> axis_length;
   };
 
-  static std::tuple<
-    State,
-    std::optional<std::tuple<std::size_t, std::size_t> > >
+  static std::tuple<State, std::optional<block_t> >
   apply(const State& st) {
 
-    auto index = st.index + st.group_length;
-    if (index < st.axis_length) {
-      State next_st {st.axis_length, st.block_length, st.group_length, index};
-      auto blen = std::min(st.axis_length - index, st.block_length);
-      return std::make_tuple(next_st, std::make_tuple(index, blen));
-    } else {
-      State next_st {
-        st.axis_length, st.block_length, st.group_length, st.axis_length};
-      return std::make_tuple(next_st, std::nullopt);
-    }
+    if (st.axis_length && st.index >= st.axis_length.value())
+      return std::make_tuple(st, std::nullopt);
+
+    auto blen = st.block_length;
+    if (st.axis_length)
+      blen = std::min(st.index + blen, st.axis_length.value()) - st.index;
+    return
+      std::make_tuple(
+        State{
+          st.block_length,
+            st.group_length,
+            st.index + st.group_length,
+            st.axis_length},
+        std::make_tuple(st.index, blen));
   }
 };
 
@@ -54,17 +58,30 @@ class BlockSequenceGenerator {
 public:
 
   struct State {
-    std::vector<std::tuple<std::size_t, std::size_t> > blocks;
+    std::vector<block_t> blocks;
+    std::optional<std::size_t> axis_length;
     std::size_t block_index;
+    std::size_t block_offset;
   };
 
-  static std::tuple<
-    State,
-    std::optional<std::tuple<std::size_t, std::size_t> > >
+  static std::tuple<State, std::optional<block_t> >
   apply(const State& st) {
 
-    auto blk = std::min(st.block_index + 1, st.blocks.size());
-    State next_st {st.blocks, blk};
+    if (st.block_index >= st.blocks.size())
+      return std::make_tuple(
+        State{st.blocks, st.axis_length, st.blocks.size(), st.block_offset},
+        std::nullopt);
+
+    auto blk_offset = st.block_offset;
+    std::size_t b0, blen;
+    std::tie(b0, blen) = st.blocks[blk];
+    if (blen == 0) {
+      blk_offset += b0;
+      blk = 0;
+      std::tie(b0, blen) = st.blocks[blk];
+      b0 += blk_offset;
+    }
+    State next_st {st.blocks, st.axis_length, blk, blk_offset};
     if (blk < st.blocks.size())
       return std::make_tuple(next_st, st.blocks[blk]);
     else
@@ -81,7 +98,7 @@ template <
   class = typename std::enable_if<
     std::is_convertible<
       typename std::iterator_traits<InputIterator>::value_type,
-      std::tuple<std::size_t, std::size_t> >::value>::type>
+      block_t>::value>::type>
 class BlockGenerator {
 
 public:
@@ -90,9 +107,7 @@ public:
     InputIterator end;
   };
 
-  static std::tuple<
-    State,
-    std::optional<std::tuple<std::size_t, std::size_t> > >
+  static std::tuple<State, std::optional<block_t> >
   apply(const State& st) {
 
     if (st.current == st.end)
