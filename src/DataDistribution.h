@@ -136,168 +136,136 @@ public:
   }
 };
 
-// IteratorDataDistribution
+// GeneratorDataDistribution
 //
-// data distribution for index-valued iterator
-//
-// base class for all sub-classes of DataDistribution defined in this module
-//
-template <
-  typename T,
-  class = typename std::enable_if<
-    std::is_convertible<
-      typename std::iterator_traits<T>::value_type,
-      std::size_t>::value>::type>
-class IteratorDataDistribution
-  : public DataDistribution {
-
-public:
-
-  typedef T iterator;
-
-  IteratorDataDistribution&
-  operator=(const IteratorDataDistribution& other) {
-    if (this != &other) {
-      IteratorDataDistribution temp(other);
-      swap(temp);
-    }
-    return *this;
-  }
-
-  IteratorDataDistribution&
-  operator=(IteratorDataDistribution&& other) {
-    m_begin = std::move(other).m_begin;
-    return *this;
-  }
-
-  class IteratorDataDistributionIterator
-    : public Iterator {
-
-    friend class IteratorDataDistribution<T>;
-
-    friend std::unique_ptr<IteratorDataDistributionIterator>
-    std::make_unique<IteratorDataDistributionIterator>(const T&);
-
-  public:
-
-    std::size_t
-    operator*() const override {
-      return *m_iter;
-    }
-
-    Iterator&
-    operator++() override {
-      ++m_iter;
-      return *this;
-    }
-
-    bool
-    at_end() const override {
-      return m_iter.at_end();
-    }
-
-  protected:
-
-    IteratorDataDistributionIterator(const T& iter)
-      : m_iter(iter) {
-    }
-
-  private:
-    T m_iter;
-  };
-
-  std::unique_ptr<Iterator>
-  begin() const override {
-    return std::make_unique<IteratorDataDistributionIterator>(m_begin);
-  }
-
-  template <typename U>
-  bool
-  operator==(const IteratorDataDistribution<U>& other) {
-    iterator i = itbegin();
-    U j = other.itbegin();
-    if (i.at_end() && j.at_end())
-      return true;
-    bool eq = true;
-    while (!i.at_end() && !j.at_end() && eq) {
-      eq = *i == *j;
-      ++i;
-      ++j;
-    }
-    return eq && i.at_end() && j.at_end();
-  }
-
-  template <typename U>
-  bool
-  operator!=(const IteratorDataDistribution<U>& other) {
-    return !operator==(other);
-  }
-
-protected:
-
-  IteratorDataDistribution(iterator&& begin)
-    : m_begin(std::forward<iterator>(begin)) {
-  }
-
-  IteratorDataDistribution(const IteratorDataDistribution& other)
-    : m_begin(other.m_begin) {
-  }
-
-  IteratorDataDistribution(IteratorDataDistribution&& other)
-    : m_begin(std::move(other).m_begin) {
-  }
-
-  iterator
-  itbegin() const {
-    return m_begin;
-  }
-
-  void
-  swap(IteratorDataDistribution& other) {
-    m_begin.swap(other.m_begin);
-
-  }
-
-private:
-
-  iterator m_begin;
-};
-
-// BlockGeneratorDataDistribution
-//
-// data distribution for a generator
+// data distribution for block-valued generator
 //
 // this is the implementation sub-class of DataDistribution, which should
 // support almost all sorts of data distributions (all that's required is a
 // generator function and an initial state)
 //
 template <typename S>
-class BlockGeneratorDataDistribution
-  : public IteratorDataDistribution<BlockGeneratorIterator<S> > {
-
-  typedef typename BlockGeneratorIterator<S>::generator_t generator_t;
-
-  friend std::unique_ptr<BlockGeneratorDataDistribution>
-  std::make_unique<BlockGeneratorDataDistribution>(
-    const generator_t& generator,
-    S&&);
-
-private:
-
-  BlockGeneratorDataDistribution(const generator_t& generator, S&& state)
-    : IteratorDataDistribution<BlockGeneratorIterator<S> >(
-      BlockGeneratorIterator(generator, std::forward<S>(state))) {
-  }
+class GeneratorDataDistribution
+  : public DataDistribution {
 
 public:
 
+  typedef std::function<
+  std::tuple<
+    S,
+    std::optional<std::tuple<std::size_t, std::size_t> > >(const S&)>
+  generator_t;
+
+  friend std::unique_ptr<GeneratorDataDistribution>
+  std::make_unique<GeneratorDataDistribution>(const generator_t&, S&&);
+
   static std::unique_ptr<DataDistribution>
   make(const generator_t& generator, S&& state) {
-    return std::make_unique<BlockGeneratorDataDistribution>(
-      generator,
-      std::forward<S>(state));
+    return
+      std::make_unique<GeneratorDataDistribution>(
+        generator,
+        std::forward<S>(state));
   }
 
+  GeneratorDataDistribution&
+  operator=(const GeneratorDataDistribution& other) {
+    if (this != &other) {
+      GeneratorDataDistribution temp(other);
+      swap(temp);
+    }
+    return *this;
+  }
+
+  GeneratorDataDistribution&
+  operator=(GeneratorDataDistribution&& other) {
+    m_generator = std::move(other).m_generator;
+    m_init_state = std::move(other).m_init_state;
+    return *this;
+  }
+
+  class GeneratorIterator
+    : public Iterator {
+
+    friend std::unique_ptr<GeneratorIterator>
+    std::make_unique<GeneratorIterator>(const generator_t&, const S&);
+
+  public:
+
+    std::size_t
+    operator*() const override {
+      std::size_t b0;
+      std::tie(b0, std::ignore) = m_block.value();
+      return b0 + m_block_offset;
+    }
+
+    Iterator&
+    operator++() override {
+      std::size_t b0, blen;
+      std::tie(b0, blen) = m_block.value();
+      if (++m_block_offset == blen) {
+        std::tie(m_next_state, m_block) = m_generator(m_next_state);
+        assert(!m_block || std::get<0>(m_block.value()) >= b0 + blen);
+        m_block_offset = 0;
+      }
+      return *this;
+    }
+
+    bool
+    at_end() const override {
+      return !m_block;
+    }
+
+  protected:
+
+    GeneratorIterator(const generator_t& generator, const S& state)
+      : m_generator(generator)
+      , m_block_offset(0) {
+
+      std::tie(m_next_state, m_block) = m_generator(state);
+    }
+
+  private:
+
+    generator_t m_generator;
+    S m_next_state;
+    std::optional<std::tuple<std::size_t, std::size_t> > m_block;
+    std::size_t m_block_offset;
+  };
+
+  std::unique_ptr<Iterator>
+  begin() const override {
+    return std::make_unique<GeneratorIterator>(m_generator, m_init_state);
+  }
+
+protected:
+
+  void
+  swap(GeneratorDataDistribution& other) {
+    using std::swap;
+    swap(m_generator, other.m_generator);
+    swap(m_init_state, other.m_init_state);
+  }
+
+private:
+
+  GeneratorDataDistribution(const generator_t& generator, const S& state)
+    : m_generator(generator)
+    , m_init_state(state) {
+  }
+
+  GeneratorDataDistribution(const GeneratorDataDistribution& other)
+    : m_generator(other.m_generator)
+    , m_init_state(other.m_init_state) {
+  }
+
+  GeneratorDataDistribution(GeneratorDataDistribution&& other)
+    : m_generator(std::move(other).m_generator)
+    , m_init_state(std::move(other).m_init_state) {
+  }
+
+  generator_t m_generator;
+
+  S m_init_state;
 };
 
 class DataDistributionFactory {
@@ -314,7 +282,7 @@ public:
     std::size_t group_size) {
 
     return
-      BlockGeneratorDataDistribution<CyclicGenerator::State>::make(
+      GeneratorDataDistribution<CyclicGenerator::State>::make(
         CyclicGenerator::apply,
         CyclicGenerator::State{
           axis_length,
@@ -330,7 +298,7 @@ public:
     const std::vector<std::tuple<std::size_t, std::size_t> >& blocks) {
 
     return
-      BlockGeneratorDataDistribution<BlockSequenceGenerator::State>::make(
+      GeneratorDataDistribution<BlockSequenceGenerator::State>::make(
         BlockSequenceGenerator::apply,
         BlockSequenceGenerator::State{blocks, 0});
   }
@@ -347,7 +315,7 @@ public:
   block_iterator(InputIterator&& begin, InputIterator&& end) {
 
     return
-      BlockGeneratorDataDistribution<
+      GeneratorDataDistribution<
         typename BlockGenerator<InputIterator>::State>::make(
           BlockGenerator<InputIterator>::apply,
           typename BlockGenerator<InputIterator>::State{begin, end});
@@ -358,11 +326,11 @@ public:
   template <typename S>
   static std::unique_ptr<DataDistribution>
   block_generator(
-    const typename BlockGeneratorIterator<S>::generator_t& generator,
+    const typename BlockGenerator<S>::generator_t& generator,
     S&& init_state) {
 
     return
-      BlockGeneratorDataDistribution<S>::make(
+      GeneratorDataDistribution<S>::make(
         generator,
         std::forward<S>(init_state));
   }
