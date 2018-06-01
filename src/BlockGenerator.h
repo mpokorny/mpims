@@ -63,7 +63,7 @@ public:
     std::optional<std::tuple<std::size_t, std::size_t> > >
   apply(const State& st) {
 
-    auto blk = st.block_index + 1;
+    auto blk = std::min(st.block_index + 1, st.blocks.size());
     State next_st {st.blocks, blk};
     if (blk < st.blocks.size())
       return std::make_tuple(next_st, st.blocks[blk]);
@@ -95,13 +95,15 @@ public:
     std::optional<std::tuple<std::size_t, std::size_t> > >
   apply(const State& st) {
 
+    if (st.current == st.end)
+      return std::make_tuple(st, std::nullopt);
+
     auto next(st.current);
     ++next;
-    State next_st {next, st.end};
     if (next != st.end)
-      return std::make_tuple(next_st, *next);
+      return std::make_tuple(State{next, st.end}, *next);
     else
-      return std::make_tuple(next_st, std::nullopt);
+      return std::make_tuple(State{st.end, st.end}, std::nullopt);
   }
 };
 
