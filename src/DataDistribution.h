@@ -153,7 +153,7 @@ class GeneratorDataDistribution
 
 public:
 
-  typedef std::function<std::tuple<S, std::optional<block_t> >(const S&)>
+  typedef std::function<std::tuple<const S, std::optional<block_t> >(const S&)>
   generator_t;
 
   // Note that the following static constructor methods return a new instance,
@@ -302,11 +302,11 @@ public:
     return
       GeneratorDataDistribution<CyclicGenerator::State>::make(
         CyclicGenerator::apply,
-        CyclicGenerator::State{
+        CyclicGenerator::initial_state(
+          offset,
           block_length,
-            block_length * group_size,
-            std::min(offset, axis_length.value_or(offset)),
-            axis_length});
+          group_size,
+          axis_length));
   }
 
   // (enumerated) block sequence data distribution
@@ -324,29 +324,10 @@ public:
     const std::vector<block_t>& blocks,
     std::optional<std::size_t> axis_length) {
 
-    auto brep =
-      std::find_if(
-        std::begin(blocks),
-        std::end(blocks),
-        [](auto& b) { return std::get<1>(b) == 0; });
-
-    if (!axis_length && brep == std::end(blocks) && blocks.size() > 0) {
-      std::size_t b0, blen;
-      std::tie(b0, blen) = blocks[blocks.size() - 1];
-      axis_length = b0 + blen;
-    };
-
-    if (brep != std::end(blocks))
-      ++brep;
-
     return
       GeneratorDataDistribution<BlockSequenceGenerator::State>::make(
         BlockSequenceGenerator::apply,
-        BlockSequenceGenerator::State{
-          std::vector<block_t>(std::begin(blocks), brep),
-            axis_length,
-            0,
-            0});
+        BlockSequenceGenerator::initial_state(blocks, axis_length));
   }
 
   // block iterator data distribution

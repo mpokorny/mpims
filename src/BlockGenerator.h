@@ -29,7 +29,22 @@ public:
     std::optional<std::size_t> axis_length;
   };
 
-  static std::tuple<State, std::optional<block_t> >
+  static const State
+  initial_state(
+    std::size_t offset,
+    std::size_t block_length,
+    std::size_t group_size,
+    std::optional<std::size_t> axis_length) {
+
+    return
+      State{
+        block_length,
+        block_length * group_size,
+        std::min(offset, axis_length.value_or(offset)),
+        axis_length};
+  }
+
+  static std::tuple<const State, std::optional<block_t> >
   apply(const State& st) {
 
     if (st.axis_length && st.index >= st.axis_length.value())
@@ -64,7 +79,31 @@ public:
     std::size_t block_offset;
   };
 
-  static std::tuple<State, std::optional<block_t> >
+  static const State
+  initial_state(
+    const std::vector<block_t>& blocks,
+    std::optional<std::size_t> axis_length) {
+
+    auto brep =
+      std::find_if(
+        std::begin(blocks),
+        std::end(blocks),
+        [](auto& b) { return std::get<1>(b) == 0; });
+
+    if (!axis_length && brep == std::end(blocks) && blocks.size() > 0) {
+      std::size_t b0, blen;
+      std::tie(b0, blen) = blocks[blocks.size() - 1];
+      axis_length = b0 + blen;
+    };
+
+    if (brep != std::end(blocks))
+      ++brep;
+
+    return
+      State{std::vector<block_t>(std::begin(blocks), brep), axis_length, 0, 0};  
+  }
+
+  static std::tuple<const State, std::optional<block_t> >
   apply(const State& st) {
 
     if (st.block_index >= st.blocks.size())
@@ -109,7 +148,7 @@ public:
     InputIterator end;
   };
 
-  static std::tuple<State, std::optional<block_t> >
+  static std::tuple<const State, std::optional<block_t> >
   apply(const State& st) {
 
     if (st.current == st.end)
