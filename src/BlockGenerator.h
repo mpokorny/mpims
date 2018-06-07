@@ -68,24 +68,26 @@ public:
   apply(const State& st) {
 
     if (st.block_index >= st.blocks.size())
-      return std::make_tuple(
-        State{st.blocks, st.axis_length, st.blocks.size(), st.block_offset},
-        std::nullopt);
+      return std::make_tuple(st, std::nullopt);
 
-    auto blk_offset = st.block_offset;
     std::size_t b0, blen;
-    std::tie(b0, blen) = st.blocks[blk];
-    if (blen == 0) {
-      blk_offset += b0;
-      blk = 0;
-      std::tie(b0, blen) = st.blocks[blk];
-      b0 += blk_offset;
+    std::tie(b0, blen) = st.blocks[st.block_index];
+    b0 += st.block_offset;
+    if (st.axis_length)
+      blen = std::min(b0 + blen, st.axis_length.value()) - b0;
+    auto next_blk = st.block_index;
+    auto next_blk_offset = st.block_offset;
+    std::size_t next_b0, next_blen;
+    std::tie(next_b0, next_blen) = st.blocks[next_blk];
+    if (next_blen == 0) {
+      next_blk_offset += next_b0;
+      if (!st.axis_length
+          || next_blk_offset + std::get<0>(st.blocks[0]) < st.axis_length.value())
+        next_blk = 0;
     }
-    State next_st {st.blocks, st.axis_length, blk, blk_offset};
-    if (blk < st.blocks.size())
-      return std::make_tuple(next_st, st.blocks[blk]);
-    else
-      return std::make_tuple(next_st, std::nullopt);
+    return std::make_tuple(
+      State{st.blocks, st.axis_length, next_blk, next_blk_offset},
+      std::make_tuple(b0, blen));
   }
 };
 
@@ -113,12 +115,7 @@ public:
     if (st.current == st.end)
       return std::make_tuple(st, std::nullopt);
 
-    auto next(st.current);
-    ++next;
-    if (next != st.end)
-      return std::make_tuple(State{next, st.end}, *next);
-    else
-      return std::make_tuple(State{st.end, st.end}, std::nullopt);
+    return std::make_tuple(State{st.current + 1, st.end}, *st.current);
   }
 };
 
