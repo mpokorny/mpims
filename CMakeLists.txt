@@ -12,6 +12,15 @@ set(
   ${CMAKE_MODULE_PATH}
   ${CMAKE_CURRENT_LIST_DIR}/cmake/Modules)
 
+if (NOT DEFINED GTEST_ROOT)
+  if (DEFINED ENV{GTEST_ROOT})
+    set(GTEST_ROOT $ENV{GTEST_ROOT})
+  else()
+    message(FATAL_ERROR "GTEST_ROOT environment variable must be set")
+  endif()
+endif()
+
+
 # set standard compiler flags
 set(CMAKE_CXX_FLAGS_DEBUG
   "${CMAKE_CXX_FLAGS_DEBUG} -std=c++17 -Og -g")
