@@ -28,3 +28,4 @@ set(CMAKE_CXX_FLAGS_RELEASE
   "${CMAKE_CXX_FLAGS_RELEASE} -std=c++17 -Ofast")
 
 add_subdirectory(src)
+add_subdirectory(test)
