@@ -153,7 +153,7 @@ class GeneratorDataDistribution
 
 public:
 
-  typedef std::function<std::tuple<const S, std::optional<block_t> >(const S&)>
+  typedef std::function<std::tuple<S, std::optional<block_t> >(const S&)>
   generator_t;
 
   // Note that the following static constructor methods return a new instance,
