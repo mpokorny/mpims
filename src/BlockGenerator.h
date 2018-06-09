@@ -31,10 +31,12 @@ public:
 
   static State
   initial_state(
-    std::size_t offset,
     std::size_t block_length,
     std::size_t group_size,
-    std::optional<std::size_t> axis_length) {
+    std::optional<std::size_t> axis_length,
+    std::size_t group_index) {
+
+    std::size_t offset = group_index * block_length;
 
     return
       State{

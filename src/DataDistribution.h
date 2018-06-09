@@ -294,19 +294,19 @@ public:
   //
   static std::shared_ptr<DataDistribution>
   cyclic(
-    std::size_t offset,
     std::size_t block_length,
     std::size_t group_size,
-    std::optional<std::size_t> axis_length) {
+    std::optional<std::size_t> axis_length,
+    std::size_t group_index) {
 
     return
       GeneratorDataDistribution<CyclicGenerator::State>::make(
         CyclicGenerator::apply,
         CyclicGenerator::initial_state(
-          offset,
           block_length,
           group_size,
-          axis_length));
+          axis_length,
+          group_index));
   }
 
   // (enumerated) block sequence data distribution
