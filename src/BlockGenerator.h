@@ -6,6 +6,7 @@
 #include <functional>
 #include <iterator>
 #include <optional>
+#include <stdexcept>
 #include <tuple>
 #include <type_traits>
 #include <vector>
@@ -35,6 +36,9 @@ public:
     std::size_t group_size,
     std::optional<std::size_t> axis_length,
     std::size_t group_index) {
+
+    if (group_index >= group_size)
+      throw std::domain_error("group_index is greater than or equal to group_size");
 
     std::size_t offset = group_index * block_length;
 
