@@ -13,7 +13,9 @@ set(
   ${CMAKE_CURRENT_LIST_DIR}/cmake/Modules)
 
 # set standard compiler flags
+set(CMAKE_CXX_FLAGS_DEBUG
+  "${CMAKE_CXX_FLAGS_DEBUG} -std=c++17 -Og -g")
 set(CMAKE_CXX_FLAGS_RELEASE
-  "${CMAKE_CXX_FLAGS_RELEASE} -Ofast")
+  "${CMAKE_CXX_FLAGS_RELEASE} -std=c++17 -Ofast")
 
 add_subdirectory(src)
