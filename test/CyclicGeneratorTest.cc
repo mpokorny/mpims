@@ -42,6 +42,7 @@ TEST(CyclicGenerator, BoundedCycle) {
 TEST(CyclicGenerator, BlockSequence) {
 
   const std::size_t group_size = 2, block_length = 2, axis_length = 8;
+  std::size_t step = group_size * block_length;
 
   for (std::size_t gi = 0; gi < group_size; ++gi) {
     auto st =
@@ -49,15 +50,13 @@ TEST(CyclicGenerator, BlockSequence) {
     std::optional<mpims::block_t> blk;
     std::optional<std::size_t> b_prev;
     std::size_t b0;
-    do {
+    std::tie(st, blk) = CyclicGenerator::apply(st);
+    while (blk) {
+      b0 = std::get<0>(blk.value());
+      EXPECT_EQ(b0, b_prev.value_or(b0 - step) + step);
+      b_prev = b0;
       std::tie(st, blk) = CyclicGenerator::apply(st);
-      if (blk) {
-        b0 = std::get<0>(blk.value());
-        if (b_prev)
-          EXPECT_EQ(b0, b_prev.value() + group_size * block_length);
-        b_prev = b0;
-      }
-    } while (blk);
+    };
   }
 
 }
@@ -106,23 +105,23 @@ TEST(CyclicGenerator, EmptyGroup) {
 TEST(CyclicGenerator, ApproxUnboundedCycle) {
 
   const std::size_t group_size = 2, block_length = 2;
+  std::size_t step = group_size * block_length;
 
   for (std::size_t gi = 0; gi < group_size; ++gi) {
     auto st = CyclicGenerator::initial_state(2, 2, std::nullopt, gi);
     std::optional<mpims::block_t> blk;
     std::optional<std::size_t> b_prev;
-    do {
+    std::tie(st, blk) = CyclicGenerator::apply(st);
+    ASSERT_TRUE(blk);
+    while (std::get<0>(blk.value()) < 10000000) {
+      // prevent infinite test loop
+      std::size_t b0 = std::get<0>(blk.value());
+      ASSERT_EQ(b0, b_prev.value_or(b0 - step) + step);
+      b_prev = b0;
+
       std::tie(st, blk) = CyclicGenerator::apply(st);
-      EXPECT_TRUE(blk);
-
-      // prevent infinite loop
-      if (b_prev) {
-        std::size_t b0 = std::get<0>(blk.value());
-        ASSERT_EQ(b0, b_prev.value() + group_size * block_length);
-        b_prev = b0;
-      }
-
-    } while (std::get<0>(blk.value()) < 10000000);
+      ASSERT_TRUE(blk);
+    };
   }
 }
 
