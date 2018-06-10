@@ -76,3 +76,11 @@ std::unique_ptr<MPI_Datatype, DatatypeDeleter>
 mpims::datatype(MPI_Datatype dt) {
   return std::unique_ptr<MPI_Datatype, DatatypeDeleter>(new MPI_Datatype(dt));
 }
+
+// Local Variables:
+// mode: c++
+// c-basic-offset: 2
+// fill-column: 80
+// indent-tabs-mode: nil
+// coding: utf-8
+// End:

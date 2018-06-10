@@ -1,4 +1,3 @@
-/* -*- mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; -*- */
 #include <complex>
 
 #include <mpi.h>
@@ -22,3 +21,11 @@ template <> bool CxDblReader::is_complex = true;
 template <> MPI_Datatype DblReader::value_datatype = MPI_DOUBLE;
 template <> std::size_t DblReader::value_size = sizeof(double);
 template <> bool DblReader::is_complex = false;
+
+// Local Variables:
+// mode: c++
+// c-basic-offset: 2
+// fill-column: 80
+// indent-tabs-mode: nil
+// coding: utf-8
+// End:

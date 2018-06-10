@@ -1,4 +1,3 @@
-/* -*- mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; -*- */
 #include <complex>
 #include <cstdlib>
 #include <iostream>
@@ -440,3 +439,11 @@ main(int argc, char* argv[]) {
 
   return EXIT_SUCCESS;
 }
+
+// Local Variables:
+// mode: c++
+// c-basic-offset: 2
+// fill-column: 80
+// indent-tabs-mode: nil
+// coding: utf-8
+// End:

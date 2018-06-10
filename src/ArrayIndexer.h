@@ -1,4 +1,3 @@
-/* -*- mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; -*- */
 #ifndef ARRAY_INDEXER_H_
 #define ARRAY_INDEXER_H_
 
@@ -220,3 +219,11 @@ private:
 } // end namespace mpims
 
 #endif // ARRAY_INDEXER_H_
+
+// Local Variables:
+// mode: c++
+// c-basic-offset: 2
+// fill-column: 80
+// indent-tabs-mode: nil
+// coding: utf-8
+// End:

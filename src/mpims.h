@@ -1,4 +1,3 @@
-/* -*- mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; -*- */
 #ifndef MPIMS_H_
 #define MPIMS_H_
 
@@ -77,3 +76,10 @@ ceil(T num, T denom) {
 
 #endif // MPIMS_H_
 
+// Local Variables:
+// mode: c++
+// c-basic-offset: 2
+// fill-column: 80
+// indent-tabs-mode: nil
+// coding: utf-8
+// End:

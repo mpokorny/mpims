@@ -1,4 +1,3 @@
-/* -*- mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; -*- */
 #include <algorithm>
 #include <complex>
 #include <cmath>
@@ -643,3 +642,11 @@ main(int argc, char *argv[]) {
     MPI_Finalize();
   }
 }
+
+// Local Variables:
+// mode: c++
+// c-basic-offset: 2
+// fill-column: 80
+// indent-tabs-mode: nil
+// coding: utf-8
+// End:

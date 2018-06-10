@@ -1,4 +1,3 @@
-/* -*- mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; -*- */
 #ifndef INDEX_BLOCK_SEQUENCE_H_
 #define INDEX_BLOCK_SEQUENCE_H_
 
@@ -144,3 +143,11 @@ struct IndexBlockSequenceMap {
 }; //
 
 #endif // INDEX_BLOCK_H_
+
+// Local Variables:
+// mode: c++
+// c-basic-offset: 2
+// fill-column: 80
+// indent-tabs-mode: nil
+// coding: utf-8
+// End:

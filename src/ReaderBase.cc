@@ -1,4 +1,3 @@
-/* -*- mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; -*- */
 #include <algorithm>
 #include <cassert>
 #include <iostream>
@@ -547,3 +546,11 @@ ReaderBase::find_iter_params(
     return &*ip;
   return nullptr;
 }
+
+// Local Variables:
+// mode: c++
+// c-basic-offset: 2
+// fill-column: 80
+// indent-tabs-mode: nil
+// coding: utf-8
+// End:

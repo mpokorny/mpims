@@ -132,3 +132,11 @@ main(int argc, char *argv[]) {
   return RUN_ALL_TESTS();
 
 }
+
+// Local Variables:
+// mode: c++
+// c-basic-offset: 2
+// fill-column: 80
+// indent-tabs-mode: nil
+// coding: utf-8
+// End:

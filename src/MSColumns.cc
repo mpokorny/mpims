@@ -63,3 +63,11 @@ mpims::mscol(const std::string& nick) {
   };
   return map[nick];
 }
+
+// Local Variables:
+// mode: c++
+// c-basic-offset: 2
+// fill-column: 80
+// indent-tabs-mode: nil
+// coding: utf-8
+// End:

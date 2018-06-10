@@ -1,4 +1,3 @@
-/* -*- mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; -*- */
 #ifndef TRAVERSAL_STATE_H_
 #define TRAVERSAL_STATE_H_
 
@@ -287,3 +286,11 @@ private:
 } // end namespace mpims
 
 #endif // TRAVERSAL_STATE_H_
+
+// Local Variables:
+// mode: c++
+// c-basic-offset: 2
+// fill-column: 80
+// indent-tabs-mode: nil
+// coding: utf-8
+// End:

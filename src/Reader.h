@@ -1,4 +1,3 @@
-/* -*- mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; -*- */
 #ifndef READER_H_
 #define READER_H_
 
@@ -1394,3 +1393,11 @@ template <> bool DblReader::is_complex;
 } // end namespace mpims
 
 #endif // READER_H_
+
+// Local Variables:
+// mode: c++
+// c-basic-offset: 2
+// fill-column: 80
+// indent-tabs-mode: nil
+// coding: utf-8
+// End:
