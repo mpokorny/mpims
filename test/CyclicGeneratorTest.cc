@@ -114,7 +114,8 @@ TEST(CyclicGenerator, ApproxUnboundedCycle) {
     std::tie(st, blk) = CyclicGenerator::apply(st);
     ASSERT_TRUE(blk);
     while (std::get<0>(blk.value()) < 10000000) {
-      // prevent infinite test loop
+      // prevent infinite loop in this test (block origin not advancing is
+      // tested separately, so this assertion is a sort of backstop)
       std::size_t b0 = std::get<0>(blk.value());
       ASSERT_EQ(b0, b_prev.value_or(b0 - step) + step);
       b_prev = b0;
