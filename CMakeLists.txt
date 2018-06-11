@@ -23,9 +23,9 @@ endif()
 
 # set standard compiler flags
 set(CMAKE_CXX_FLAGS_DEBUG
-  "${CMAKE_CXX_FLAGS_DEBUG} -std=c++17 -Og -g")
+  "${CMAKE_CXX_FLAGS_DEBUG} -std=c++17 -Wall -Werror -Og -g")
 set(CMAKE_CXX_FLAGS_RELEASE
-  "${CMAKE_CXX_FLAGS_RELEASE} -std=c++17 -Ofast")
+  "${CMAKE_CXX_FLAGS_RELEASE} -std=c++17 -Wall -Werror -Ofast")
 
 add_subdirectory(src)
 add_subdirectory(test)
