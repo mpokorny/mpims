@@ -1,31 +1,26 @@
-find_library(GTEST gtest)
-set(GTEST_INCLUDE_DIR "${GTEST_ROOT}/include")
+find_package(PkgConfig)
+pkg_check_modules(GTEST REQUIRED gtest)
 
-set(CMAKE_CXX_FLAGS_DEBUG
-  "${CMAKE_CXX_FLAGS_DEBUG} -pthread")
-set(CMAKE_CXX_FLAGS_RELEASE
-  "${CMAKE_CXX_FLAGS_RELEASE} -pthread")
+link_directories(
+  ${LINK_DIRECTORIES} ${GTEST_LIBRARY_DIRS})
+include_directories(
+  ${INCLUDE_DIRECTORIES} ${GTEST_INCLUDE_DIRS} "../src")
+# I don't know how to get the libpthread dependency out of GTEST_LDFLAGS or
+# GTEST_LDFLAGS_OTHER, but I know that the dependency exists, so I'll just put
+# it here manually
+link_libraries(
+  ${LINK_LIBRARIES} ${GTEST_LIBRARIES} "pthread")
 
 add_executable(
   CyclicGeneratorTest
-  CyclicGeneratorTest.cc
-  "${GTEST_INCLUDE_DIR}/gtest/gtest.h")
-target_include_directories(
-  CyclicGeneratorTest PRIVATE
-  ${GTEST_INCLUDE_DIR}
-  "../src")
-target_link_libraries(
-  CyclicGeneratorTest
-  gtest)
+  CyclicGeneratorTest.cc)
+target_compile_options(
+  CyclicGeneratorTest PUBLIC
+  ${GTEST_CFLAGS_OTHER})
 
 add_executable(
   BlockSequenceGeneratorTest
-  BlockSequenceGeneratorTest.cc
-  "${GTEST_INCLUDE_DIR}/gtest/gtest.h")
-target_include_directories(
-  BlockSequenceGeneratorTest PRIVATE
-  ${GTEST_INCLUDE_DIR}
-  "../src")
-target_link_libraries(
-  BlockSequenceGeneratorTest
-  gtest)
+  BlockSequenceGeneratorTest.cc)
+target_compile_options(
+  BlockSequenceGeneratorTest PUBLIC
+  ${GTEST_CFLAGS_OTHER})
