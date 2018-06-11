@@ -313,10 +313,7 @@ public:
   // * a block of length 0 is used to indicate the start of a repetition (any
   //   blocks in the sequence following such a block are ignored)
   //
-  // * an empty 'axis_length' is used to indicate indefinite repetition
-  //
-  // * an empty 'axis length' without a block of length 0 implies an axis length
-  //   equal to the smallest index beyond the block sequence
+  // * an empty 'axis_length' is used to indicate an indefinite axis length
   //
   static std::shared_ptr<DataDistribution>
   block_sequence(
