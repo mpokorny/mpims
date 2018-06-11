@@ -182,6 +182,35 @@ TEST(BlockSequenceGenerator, ApproxRepeatingSequenceUnbounded) {
   }
 }
 
+TEST(BlockSequenceGenerator, RepeatingSequenceExcess) {
+
+  const std::size_t rep = 15;
+  const std::size_t axreps = 3;
+  const std::vector<block_t> blocks{
+    block_t(0, 2),
+      block_t(5, 3),
+      block_t(12, 1),
+      block_t(rep, 0),
+      block_t(rep + 2, 2)};
+
+  auto st = BlockSequenceGenerator::initial_state(blocks, axreps * rep);
+  std::optional<block_t> blk;
+  for (std::size_t n = 0; n < axreps; ++n)
+    for (std::size_t i = 0; i < blocks.size() - 2; ++i) {
+      std::tie(st, blk) = BlockSequenceGenerator::apply(st);
+      EXPECT_TRUE(blk);
+      if (blk) {
+        auto rblk =
+          std::make_tuple(
+            std::get<0>(blocks[i]) + n * rep,
+            std::get<1>(blocks[i]));
+        EXPECT_EQ(blk.value(), rblk);
+      }
+    }
+  std::tie(st, blk) = BlockSequenceGenerator::apply(st);
+  EXPECT_FALSE(blk);
+}
+
 int
 main(int argc, char *argv[]) {
 
