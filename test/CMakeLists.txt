@@ -17,3 +17,15 @@ target_include_directories(
 target_link_libraries(
   CyclicGeneratorTest
   gtest)
+
+add_executable(
+  BlockSequenceGeneratorTest
+  BlockSequenceGeneratorTest.cc
+  "${GTEST_INCLUDE_DIR}/gtest/gtest.h")
+target_include_directories(
+  BlockSequenceGeneratorTest PRIVATE
+  ${GTEST_INCLUDE_DIR}
+  "../src")
+target_link_libraries(
+  BlockSequenceGeneratorTest
+  gtest)

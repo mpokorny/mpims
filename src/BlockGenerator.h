@@ -117,9 +117,12 @@ public:
     std::size_t b0, blen;
     std::tie(b0, blen) = st.blocks[st.block_index];
     b0 += st.block_offset;
+    if (st.axis_length && b0 >= st.axis_length.value())
+      return std::make_tuple(st, std::nullopt);
+
     if (st.axis_length)
       blen = std::min(b0 + blen, st.axis_length.value()) - b0;
-    auto next_blk = st.block_index;
+    auto next_blk = st.block_index + 1;
     auto next_blk_offset = st.block_offset;
     std::size_t next_b0, next_blen;
     std::tie(next_b0, next_blen) = st.blocks[next_blk];
