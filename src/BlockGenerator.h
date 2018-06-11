@@ -89,6 +89,11 @@ public:
     const std::vector<block_t>& blocks,
     std::optional<std::size_t> axis_length) {
 
+    for (std::size_t i = 1; i < blocks.size(); ++i)
+      if (std::get<0>(blocks[i])
+          < std::get<0>(blocks[i - 1]) + std::get<1>(blocks[i - 1]))
+        throw std::domain_error("overlapping blocks");
+
     auto brep =
       std::find_if(
         std::begin(blocks),

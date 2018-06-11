@@ -7,6 +7,18 @@
 
 using namespace mpims;
 
+TEST(BlockSequenceGenerator, BlocksOverlap) {
+  const std::vector<block_t> good0{ block_t(0, 2), block_t(5, 3) };
+  const std::vector<block_t> good1{ block_t(0, 2), block_t(2, 3) };
+  const std::vector<block_t> bad{ block_t(0, 2), block_t(1, 3) };
+
+  EXPECT_NO_THROW(BlockSequenceGenerator::initial_state(good0, std::nullopt));
+  EXPECT_NO_THROW(BlockSequenceGenerator::initial_state(good1, std::nullopt));
+  EXPECT_THROW(
+    BlockSequenceGenerator::initial_state(bad, std::nullopt),
+    std::domain_error);
+}
+
 TEST(BlockSequenceGenerator, SimpleSequence) {
 
   const std::vector<block_t> blocks{
