@@ -17,5 +17,13 @@ target_compile_options(
   BlockSequenceGeneratorTest PUBLIC
   ${GTEST_CFLAGS_OTHER})
 
+add_executable(
+  DataDistributionTest
+  DataDistributionTest.cc)
+target_compile_options(
+  DataDistributionTest PUBLIC
+  ${GTEST_CFLAGS_OTHER})
+
 gtest_discover_tests(CyclicGeneratorTest)
 gtest_discover_tests(BlockSequenceGeneratorTest)
+gtest_discover_tests(DataDistributionTest)
