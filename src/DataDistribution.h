@@ -85,8 +85,8 @@ public:
     std::vector<std::size_t>
     take(std::size_t n = 1) {
       std::vector<std::size_t> result;
-      result.resize(n);
-      while (n > 0 && !at_end()) {
+      result.reserve(n);
+      while (n-- > 0 && !at_end()) {
         result.push_back(operator*());
         operator++();
       }
