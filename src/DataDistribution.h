@@ -55,8 +55,6 @@ blocks(const InputIterator& first, const InputIterator& last) {
   return result;
 }
 
-class DataDistributionFactory;
-
 // DataDistribution
 //
 // abstract class for data access distributions
@@ -72,6 +70,8 @@ public:
     : public std::iterator<std::input_iterator_tag, std::size_t> {
 
   public:
+
+    virtual ~Iterator() {}
 
     virtual std::size_t
     operator*() const = 0;
@@ -115,6 +115,8 @@ public:
       return mpims::blocks(std::begin(seq), std::end(seq));
     }
   };
+
+  virtual ~DataDistribution() {}
 
   virtual std::unique_ptr<Iterator>
   begin() const = 0;
