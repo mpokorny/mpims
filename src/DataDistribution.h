@@ -165,8 +165,7 @@ public:
 
   static std::shared_ptr<DataDistribution>
   make(const generator_t& generator, const S& state) {
-    return
-      std::make_shared<GeneratorDataDistribution>(generator, state);
+    return std::make_shared<GeneratorDataDistribution>(generator, state);
   }
 
   static std::shared_ptr<DataDistribution>
@@ -329,30 +328,12 @@ public:
         BlockSequenceGenerator::initial_state(blocks, axis_length));
   }
 
-  // block iterator data distribution
-  //
-  template <
-    typename InputIterator,
-    class = typename std::enable_if<
-      std::is_convertible<
-        typename std::iterator_traits<InputIterator>::value_type,
-        block_t>::value>::type>
-  static std::shared_ptr<DataDistribution>
-  block_iterator(InputIterator&& begin, InputIterator&& end) {
-
-    return
-      GeneratorDataDistribution<
-        typename BlockGenerator<InputIterator>::State>::make(
-          BlockGenerator<InputIterator>::apply,
-          typename BlockGenerator<InputIterator>::State{begin, end});
-  }
-
   // generic data distribution factory method
   //
   template <typename S>
   static std::shared_ptr<DataDistribution>
   block_generator(
-    const typename BlockGenerator<S>::generator_t& generator,
+    const typename GeneratorDataDistribution<S>::generator_t& generator,
     S&& init_state) {
 
     return

@@ -143,34 +143,6 @@ public:
   }
 };
 
-// BlockGenerator
-//
-// generator function for block-valued iterator
-//
-template <
-  typename InputIterator,
-  class = typename std::enable_if<
-    std::is_convertible<
-      typename std::iterator_traits<InputIterator>::value_type,
-      block_t>::value>::type>
-class BlockGenerator {
-
-public:
-  struct State {
-    InputIterator current;
-    InputIterator end;
-  };
-
-  static std::tuple<State, std::optional<block_t> >
-  apply(const State& st) {
-
-    if (st.current == st.end)
-      return std::make_tuple(st, std::nullopt);
-
-    return std::make_tuple(State{st.current + 1, st.end}, *st.current);
-  }
-};
-
 }
 
 #endif // BLOCK_GENERATOR_H_
