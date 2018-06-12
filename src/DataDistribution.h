@@ -149,7 +149,7 @@ public:
 // generator function and an initial state)
 //
 template <typename S>
-class GeneratorDataDistribution
+class GeneratorDataDistribution final
   : public DataDistribution {
 
 public:
@@ -192,7 +192,7 @@ public:
     return *this;
   }
 
-  class GeneratorIterator
+  class GeneratorIterator final
     : public Iterator {
 
   public:
