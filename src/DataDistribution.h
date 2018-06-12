@@ -217,9 +217,7 @@ public:
       std::tie(b0, blen) = m_block.value();
       if (++m_block_offset == blen) {
         std::tie(m_next_state, m_block) = (*m_generator)(m_next_state);
-        if (!m_block)
-          throw std::out_of_range("increment past end");
-        if (std::get<0>(m_block.value()) < b0 + blen)
+        if (m_block && std::get<0>(m_block.value()) < b0 + blen)
           throw std::domain_error("overlapping blocks");
         m_block_offset = 0;
       }
