@@ -33,7 +33,7 @@ public:
   initial_states(
     std::size_t block_length,
     std::size_t order,
-    std::optional<std::size_t> axis_length) {
+    const std::optional<std::size_t>& axis_length) {
 
     return [=](std::size_t rank) {
       if (rank >= order)
@@ -88,7 +88,7 @@ public:
   static auto
   initial_states(
     const std::vector<std::vector<block_t> >& all_blocks,
-    std::optional<std::size_t> axis_length) {
+    const std::optional<std::size_t>& axis_length) {
 
     return [=](std::size_t rank) {
       if (rank >= all_blocks.size())

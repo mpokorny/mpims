@@ -323,7 +323,7 @@ public:
   cyclic(
     std::size_t block_length,
     std::size_t order,
-    std::optional<std::size_t> axis_length) {
+    const std::optional<std::size_t>& axis_length) {
 
     return
       GeneratorDataDistribution<CyclicGenerator::State>::make(
@@ -345,7 +345,7 @@ public:
   static std::shared_ptr<const DataDistribution>
   block_sequence(
     const std::vector<std::vector<block_t> >& all_blocks,
-    std::optional<std::size_t> axis_length) {
+    const std::optional<std::size_t>& axis_length) {
 
     return
       GeneratorDataDistribution<BlockSequenceGenerator::State>::make(
