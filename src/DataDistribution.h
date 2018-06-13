@@ -323,7 +323,7 @@ public:
   cyclic(
     std::size_t block_length,
     std::size_t order,
-    const std::optional<std::size_t>& axis_length) {
+    const std::optional<std::size_t>& axis_length = std::nullopt) {
 
     return
       GeneratorDataDistribution<CyclicGenerator::State>::make(
@@ -345,7 +345,7 @@ public:
   static std::shared_ptr<const DataDistribution>
   block_sequence(
     const std::vector<std::vector<block_t> >& all_blocks,
-    const std::optional<std::size_t>& axis_length) {
+    const std::optional<std::size_t>& axis_length = std::nullopt) {
 
     return
       GeneratorDataDistribution<BlockSequenceGenerator::State>::make(
@@ -355,7 +355,7 @@ public:
   }
 
   static std::shared_ptr<const DataDistribution>
-  unpartitioned(const std::optional<std::size_t>& axis_length) {
+  unpartitioned(const std::optional<std::size_t>& axis_length = std::nullopt) {
 
     return GeneratorDataDistribution<UnpartitionedGenerator::State>::make(
       UnpartitionedGenerator::apply,
