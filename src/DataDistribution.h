@@ -318,7 +318,7 @@ public:
   //
   // * an empty 'axis_length' is used to indicate indefinite repetition
   //
-  static std::shared_ptr<DataDistribution>
+  static std::shared_ptr<const DataDistribution>
   cyclic(
     std::size_t block_length,
     std::size_t order,
@@ -341,7 +341,7 @@ public:
   //
   // * an empty 'axis_length' is used to indicate an indefinite axis length
   //
-  static std::shared_ptr<DataDistribution>
+  static std::shared_ptr<const DataDistribution>
   block_sequence(
     const std::vector<std::vector<block_t> >& all_blocks,
     std::optional<std::size_t> axis_length) {
@@ -356,7 +356,7 @@ public:
   // generic data distribution factory method
   //
   template <typename S>
-  static std::shared_ptr<DataDistribution>
+  static std::shared_ptr<const DataDistribution>
   block_generator(
     const typename GeneratorDataDistribution<S>::generator_t& generator,
     const typename GeneratorDataDistribution<S>::initializer_t& initializer,
