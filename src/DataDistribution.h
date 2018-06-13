@@ -354,6 +354,15 @@ public:
         all_blocks.size());
   }
 
+  static std::shared_ptr<const DataDistribution>
+  unpartitioned(const std::optional<std::size_t>& axis_length) {
+
+    return GeneratorDataDistribution<UnpartitionedGenerator::State>::make(
+      UnpartitionedGenerator::apply,
+      UnpartitionedGenerator::initial_states(axis_length),
+      1);
+  }
+
   // generic data distribution factory method
   //
   template <typename S>

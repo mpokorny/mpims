@@ -18,6 +18,13 @@ target_compile_options(
   ${GTEST_CFLAGS_OTHER})
 
 add_executable(
+  UnpartitionedGeneratorTest
+  UnpartitionedGeneratorTest.cc)
+target_compile_options(
+  UnpartitionedGeneratorTest PUBLIC
+  ${GTEST_CFLAGS_OTHER})
+
+add_executable(
   DataDistributionTest
   DataDistributionTest.cc)
 target_compile_options(
@@ -26,4 +33,5 @@ target_compile_options(
 
 gtest_discover_tests(CyclicGeneratorTest)
 gtest_discover_tests(BlockSequenceGeneratorTest)
+gtest_discover_tests(UnpartitionedGeneratorTest)
 gtest_discover_tests(DataDistributionTest)

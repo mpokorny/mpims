@@ -4,6 +4,7 @@
 #include <cassert>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <tuple>
@@ -150,6 +151,35 @@ public:
       State{st.blocks, st.axis_length, next_blk, next_blk_offset},
       std::make_tuple(b0, blen));
   }
+};
+
+class UnpartitionedGenerator {
+
+public:
+
+  typedef block_t State;
+
+  static auto constexpr
+  initial_states(const std::optional<std::size_t>& axis_length) {
+    return [=](const std::size_t rank) {
+      if (rank > 0)
+        throw std::domain_error("rank is greater than or equal to order");
+
+      return
+        block_t(
+          0,
+          axis_length.value_or(std::numeric_limits<std::size_t>::max()));
+    };
+  }
+
+  static std::tuple<State, std::optional<block_t> >
+  apply(const State& st) {
+    if (std::get<1>(st) > 0)
+      return std::make_tuple(block_t(0, 0), st);
+    else
+      return std::make_tuple(st, std::nullopt);
+  }
+
 };
 
 }
