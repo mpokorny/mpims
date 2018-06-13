@@ -13,7 +13,7 @@
 
 namespace mpims {
 
-typedef std::tuple<std::size_t, std::size_t> block_t;
+typedef std::tuple<std::size_t, std::optional<std::size_t> > block_t;
 
 // CyclicGenerator
 //
@@ -87,6 +87,37 @@ public:
   };
 
   static auto
+  is_unbounded(
+    const std::vector<std::vector<block_t> >& all_blocks,
+    const std::optional<std::size_t>& axis_length) {
+
+    if (axis_length)
+      return false;
+
+    bool result = false;
+    for (auto& blocks : all_blocks) {
+      if (blocks.size() > 0) {
+        auto brep =
+          std::find_if(
+            std::begin(blocks),
+            std::end(blocks),
+            [](auto& b) { return std::get<1>(b) == 0; });
+
+        if (!axis_length) {
+          if (brep == std::end(blocks)) {
+            std::optional<std::size_t> blen;
+            std::tie(std::ignore, blen) = blocks[blocks.size() - 1];
+            result = result || !blen;
+          } else {
+            result = true;
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  static auto
   initial_states(
     const std::vector<std::vector<block_t> >& all_blocks,
     const std::optional<std::size_t>& axis_length) {
@@ -97,10 +128,18 @@ public:
 
       auto blocks = &all_blocks[rank];
 
-      for (std::size_t i = 1; i < blocks->size(); ++i)
-        if (std::get<0>((*blocks)[i])
-            < std::get<0>((*blocks)[i - 1]) + std::get<1>((*blocks)[i - 1]))
+      block_t prev = (*blocks)[0];
+      for (std::size_t i = 1; i < blocks->size(); ++i) {
+        std::size_t p0;
+        std::optional<std::size_t> plen;
+        std::tie(p0, plen) = prev;
+        std::optional<std::size_t> prev_end =
+          (plen ? (p0 + plen.value()) : plen);
+        block_t cur = (*blocks)[i];
+        if (!prev_end || std::get<0>(cur) < prev_end.value())
           throw std::domain_error("overlapping blocks");
+        prev = cur;
+      }
 
       auto brep =
         std::find_if(
@@ -110,9 +149,10 @@ public:
 
       auto alen = axis_length;
       if (!alen && brep == std::end(*blocks) && blocks->size() > 0) {
-        std::size_t b0, blen;
+        std::size_t b0;
+        std::optional<std::size_t> blen;
         std::tie(b0, blen) = (*blocks)[blocks->size() - 1];
-        alen = b0 + blen;
+        alen = (blen ? (b0 + blen.value()) : blen);
       };
 
       if (brep != std::end(*blocks))
@@ -129,22 +169,29 @@ public:
     if (st.block_index >= st.blocks.size())
       return std::make_tuple(st, std::nullopt);
 
-    std::size_t b0, blen;
+    std::size_t b0;
+    std::optional<std::size_t> blen;
     std::tie(b0, blen) = st.blocks[st.block_index];
     b0 += st.block_offset;
     if (st.axis_length && b0 >= st.axis_length.value())
       return std::make_tuple(st, std::nullopt);
 
-    if (st.axis_length)
-      blen = std::min(b0 + blen, st.axis_length.value()) - b0;
+    if (st.axis_length) {
+      if (blen)
+        blen = std::min(b0 + blen.value(), st.axis_length.value()) - b0;
+      else
+        blen = st.axis_length.value() - b0;
+    }
     auto next_blk = st.block_index + 1;
     auto next_blk_offset = st.block_offset;
-    std::size_t next_b0, next_blen;
+    std::size_t next_b0;
+    std::optional<std::size_t> next_blen;
     std::tie(next_b0, next_blen) = st.blocks[next_blk];
     if (next_blen == 0) {
       next_blk_offset += next_b0;
       if (!st.axis_length
-          || next_blk_offset + std::get<0>(st.blocks[0]) < st.axis_length.value())
+          || (next_blk_offset + std::get<0>(st.blocks[0])
+              < st.axis_length.value()))
         next_blk = 0;
     }
     return std::make_tuple(
@@ -165,16 +212,13 @@ public:
       if (rank > 0)
         throw std::domain_error("rank is greater than or equal to order");
 
-      return
-        block_t(
-          0,
-          axis_length.value_or(std::numeric_limits<std::size_t>::max()));
+      return block_t(0, axis_length);
     };
   }
 
   static std::tuple<State, std::optional<block_t> >
   apply(const State& st) {
-    if (std::get<1>(st) > 0)
+    if (std::get<1>(st).value_or(1) > 0)
       return std::make_tuple(block_t(0, 0), st);
     else
       return std::make_tuple(st, std::nullopt);

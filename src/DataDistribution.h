@@ -36,15 +36,16 @@ blocks(const InputIterator& first, const InputIterator& last) {
     [&result, &block](const auto& i) {
       if (block) {
         auto blk = block.value();
-        std::size_t b0 = 0, blen = 0;
+        std::size_t b0 = 0;
+        std::optional<std::size_t> blen = 0;
         std::tie(b0, blen) = blk;
-        auto bend = b0 + blen;
+        auto bend = b0 + blen.value();
         if (i > bend) {
           result.push_back(blk);
           block.emplace(i, 1);
         } else {
           assert(i == bend);
-          block.emplace(b0, blen + 1);
+          block.emplace(b0, blen.value() + 1);
         }
       } else {
         block.emplace(i, 1);
@@ -82,6 +83,9 @@ public:
     virtual bool
     at_end() const = 0;
 
+    virtual bool
+    is_unbounded() const = 0;
+
     std::vector<std::size_t>
     take(std::size_t n = 1) {
       std::vector<std::size_t> result;
@@ -101,6 +105,8 @@ public:
 
     std::vector<std::size_t>
     take_all() {
+      if (is_unbounded())
+        throw std::domain_error("not allowed on unbounded sequence");
       std::vector<std::size_t> result;
       while (!at_end()) {
         result.push_back(operator*());
@@ -135,8 +141,13 @@ public:
       result << rksep << rank << ":[";
       const char *blksep = "";
       for (const auto& blk : begin(rank)->take_all_blocked()) {
+        std::size_t b0;
+        std::optional<std::size_t> blen;
+        std::tie(b0, blen) = blk;
         result << blksep
-               << "(" << std::get<0>(blk) << "," << std::get<1>(blk) << ")";
+               << "(" << b0
+               << "," << (blen ? std::to_string(blen.value()) : "-")
+               << ")";
         blksep = ",";
       }
       result << "]";
@@ -187,11 +198,13 @@ public:
   make(
     const generator_t& generator,
     const initializer_t& initializer,
-    std::size_t order) {
+    std::size_t order,
+    bool unbounded) {
     return std::make_shared<GeneratorDataDistribution>(
       generator,
       initializer,
-      order);
+      order,
+      unbounded);
   }
 
   GeneratorDataDistribution&
@@ -208,6 +221,7 @@ public:
     m_generator = std::move(other).m_generator;
     m_initializer = std::move(other).m_initializer;
     m_order = std::move(other).m_order;
+    m_unbounded = std::move(other).m_unbounded;
     return *this;
   }
 
@@ -218,9 +232,11 @@ public:
 
     GeneratorIterator(
       const std::shared_ptr<const generator_t>& generator,
-      const S& state)
+      const S& state,
+      bool unbounded)
       : m_generator(generator)
-      , m_block_offset(0) {
+      , m_block_offset(0)
+      , m_unbounded(unbounded) {
 
       std::tie(m_next_state, m_block) = (*m_generator)(state);
     }
@@ -234,11 +250,12 @@ public:
 
     Iterator&
     operator++() override {
-      std::size_t b0, blen;
+      std::size_t b0;
+      std::optional<std::size_t> blen;
       std::tie(b0, blen) = m_block.value();
-      if (++m_block_offset == blen) {
+      if (blen && ++m_block_offset == blen.value()) {
         std::tie(m_next_state, m_block) = (*m_generator)(m_next_state);
-        if (m_block && std::get<0>(m_block.value()) < b0 + blen)
+        if (m_block && std::get<0>(m_block.value()) < b0 + blen.value())
           throw std::domain_error("overlapping blocks");
         m_block_offset = 0;
       }
@@ -250,12 +267,18 @@ public:
       return !m_block;
     }
 
+    bool
+    is_unbounded() const override {
+      return m_unbounded;
+    }
+
   private:
 
     std::shared_ptr<const generator_t> m_generator;
     S m_next_state;
     std::optional<block_t> m_block;
     std::size_t m_block_offset;
+    bool m_unbounded;
   };
 
   std::unique_ptr<Iterator>
@@ -263,7 +286,10 @@ public:
     if (rank >= m_order)
       throw std::domain_error("rank is greater than or equal to order");
     std::shared_ptr<const generator_t> gen(shared_from_this(), &m_generator);
-    return std::make_unique<GeneratorIterator>(gen, m_initializer(rank));
+    return std::make_unique<GeneratorIterator>(
+      gen,
+      m_initializer(rank),
+      m_unbounded);
   }
 
 protected:
@@ -274,6 +300,7 @@ protected:
     swap(m_generator, other.m_generator);
     swap(m_initializer, other.m_initializer);
     swap(m_order, other.m_order);
+    swap(m_unbounded, other.m_unbounded);
   }
 
 public:
@@ -283,23 +310,27 @@ public:
   GeneratorDataDistribution(
     const generator_t& generator,
     const initializer_t& initializer,
-    std::size_t order)
+    std::size_t order,
+    bool unbounded)
     : m_generator(generator)
-    , m_initializer(initializer) {
+    , m_initializer(initializer)
+    , m_unbounded(unbounded) {
 
     m_order = order;
   }
 
   GeneratorDataDistribution(const GeneratorDataDistribution& other)
     : m_generator(other.m_generator)
-    , m_initializer(other.m_initializer) {
+    , m_initializer(other.m_initializer)
+    , m_unbounded(other.m_unbounded) {
 
     m_order = other.m_order;
   }
 
   GeneratorDataDistribution(GeneratorDataDistribution&& other)
     : m_generator(std::move(other).m_generator)
-    , m_initializer(std::move(other).m_initializer) {
+    , m_initializer(std::move(other).m_initializer)
+    , m_unbounded(std::move(other).m_unbounded) {
 
     m_order = std::move(other).m_order;
   }
@@ -308,7 +339,9 @@ private:
 
   generator_t m_generator;
 
-  initializer_t m_initializer;;
+  initializer_t m_initializer;
+
+  bool m_unbounded;
 };
 
 class DataDistributionFactory {
@@ -329,7 +362,8 @@ public:
       GeneratorDataDistribution<CyclicGenerator::State>::make(
         CyclicGenerator::apply,
         CyclicGenerator::initial_states(block_length, order, axis_length),
-        order);
+        order,
+        !axis_length);
   }
 
   // (enumerated) block sequence data distribution
@@ -351,7 +385,8 @@ public:
       GeneratorDataDistribution<BlockSequenceGenerator::State>::make(
         BlockSequenceGenerator::apply,
         BlockSequenceGenerator::initial_states(all_blocks, axis_length),
-        all_blocks.size());
+        all_blocks.size(),
+        BlockSequenceGenerator::is_unbounded(all_blocks, axis_length));
   }
 
   static std::shared_ptr<const DataDistribution>
@@ -360,7 +395,8 @@ public:
     return GeneratorDataDistribution<UnpartitionedGenerator::State>::make(
       UnpartitionedGenerator::apply,
       UnpartitionedGenerator::initial_states(axis_length),
-      1);
+      1,
+      !axis_length);
   }
 
   // generic data distribution factory method

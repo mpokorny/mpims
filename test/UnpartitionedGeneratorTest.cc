@@ -14,10 +14,21 @@ TEST(UnpartitionedGenerator, TotalSequence) {
   std::optional<block_t> blk;
   std::tie(st, blk) = UnpartitionedGenerator::apply(st);
   ASSERT_TRUE(blk);
-  std::size_t b0, blen;
+  std::size_t b0;
+  std::optional<std::size_t> blen;
   std::tie(b0, blen) = blk.value();
   EXPECT_EQ(b0, 0);
-  EXPECT_EQ(blen, axis_length);
+  ASSERT_TRUE(blen);
+  EXPECT_EQ(blen.value(), axis_length);
+  std::tie(st, blk) = UnpartitionedGenerator::apply(st);
+  EXPECT_FALSE(blk);
+
+  st = UnpartitionedGenerator::initial_states(std::nullopt)(0);
+  std::tie(st, blk) = UnpartitionedGenerator::apply(st);
+  ASSERT_TRUE(blk);
+  std::tie(b0, blen) = blk.value();
+  EXPECT_EQ(b0, 0);
+  ASSERT_FALSE(blen);
   std::tie(st, blk) = UnpartitionedGenerator::apply(st);
   EXPECT_FALSE(blk);
 }

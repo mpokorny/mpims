@@ -45,6 +45,10 @@ TEST(DataDistribution, AllBlocks) {
       blks.push_back(block_t(i, std::min(i + block_size, axis_length) - i));
     EXPECT_EQ(dd->blocks(rank), blks);
   }
+
+  // can't get all blocks of unbounded distribution
+  dd = DataDistributionFactory::unpartitioned();
+  EXPECT_THROW(dd->blocks(0), std::domain_error);
 }
 
 TEST(DataDistribution, IteratorLifecycle) {
@@ -169,13 +173,17 @@ TEST(DataDistribution, IteratorTakeBlocked) {
       while (idx != std::end(indices)) {
         std::size_t n = 0;
         for (auto& blk : it->take_blocked(tksz)) {
-          std::size_t b0, blen;
+          std::size_t b0;
+          std::optional<std::size_t> blen;
           std::tie(b0, blen) = blk;
-          for (std::size_t i = 0; idx != std::end(indices) && i < blen; ++i) {
+          for (
+            std::size_t i = 0;
+            idx != std::end(indices) && i < blen.value();
+            ++i) {
             EXPECT_EQ(b0 + i, *idx);
             ++idx;
           }
-          n += blen;
+          n += blen.value();
         }
         if (!it->at_end()) {
           EXPECT_EQ(n, tksz);

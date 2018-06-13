@@ -10,16 +10,18 @@ using namespace mpims;
 TEST(BlockSequenceGenerator, BlocksOverlap) {
   const std::vector<block_t> good0{ block_t(0, 2), block_t(5, 3) };
   const std::vector<block_t> good1{ block_t(2, 2), block_t(8, 3) };
-  const std::vector<block_t> bad{ block_t(4, 2), block_t(5, 3) };
+  const std::vector<block_t> bad0{ block_t(4, 2), block_t(5, 3) };
+  const std::vector<block_t> bad1{ block_t(4, std::nullopt), block_t(5, 3) };
 
   auto states =
     BlockSequenceGenerator::initial_states(
-      std::vector{good0, good1, bad},
+      std::vector{good0, good1, bad0, bad1},
       std::nullopt);
 
   EXPECT_NO_THROW(states(0));
   EXPECT_NO_THROW(states(1));
   EXPECT_THROW(states(2), std::domain_error);
+  EXPECT_THROW(states(3), std::domain_error);
 }
 
 TEST(BlockSequenceGenerator, SimpleSequence) {
@@ -65,11 +67,12 @@ TEST(BlockSequenceGenerator, TruncatedSequence) {
     std::tie(st, blk) = BlockSequenceGenerator::apply(st);
     EXPECT_EQ(blk.has_value(), std::get<0>(blocks[1]) <= axis_length);
     if (blk) {
-      std::size_t b1, b1len;
+      std::size_t b1;
+      std::optional<std::size_t> b1len;
       std::tie(b1, b1len) = blocks[1];
       EXPECT_EQ(
         blk.value(),
-        block_t(b1, std::min(b1 + b1len, axis_length) - b1));
+        block_t(b1, std::min(b1 + b1len.value(), axis_length) - b1));
     }
     std::tie(st, blk) = BlockSequenceGenerator::apply(st);
     EXPECT_FALSE(blk);
@@ -123,7 +126,7 @@ TEST(BlockSequenceGenerator, RepeatingSequenceBoundedAxis) {
         auto rblk =
           std::make_tuple(
             std::get<0>(blocks[i]) + n * rep,
-            std::get<1>(blocks[i]));
+            std::get<1>(blocks[i]).value());
         EXPECT_EQ(blk.value(), rblk);
       }
     }
@@ -151,7 +154,7 @@ TEST(BlockSequenceGenerator, TruncatedRepeatingSequence) {
       block_t rblk =
         std::make_tuple(
           std::get<0>(blocks[i]) + n * rep,
-          std::get<1>(blocks[i]));
+          std::get<1>(blocks[i]).value());
       EXPECT_EQ(blk.value(), rblk);
     }
   std::tie(st, blk) = BlockSequenceGenerator::apply(st);
@@ -159,7 +162,7 @@ TEST(BlockSequenceGenerator, TruncatedRepeatingSequence) {
   block_t rblk =
     std::make_tuple(
       std::get<0>(blocks[0]) + (axreps - 1) * rep,
-      std::get<1>(blocks[0]));
+      std::get<1>(blocks[0]).value());
   EXPECT_EQ(blk.value(), rblk);
   std::tie(st, blk) = BlockSequenceGenerator::apply(st);
   ASSERT_TRUE(blk);
@@ -192,7 +195,7 @@ TEST(BlockSequenceGenerator, ApproxRepeatingSequenceUnbounded) {
     block_t rblk =
       std::make_tuple(
         std::get<0>(blocks[bi]) + n * rep,
-        std::get<1>(blocks[bi]));
+        std::get<1>(blocks[bi]).value());
     ASSERT_EQ(blk.value(), rblk);
 
     ++bi;
@@ -230,7 +233,7 @@ TEST(BlockSequenceGenerator, RepeatingSequenceExcess) {
         auto rblk =
           std::make_tuple(
             std::get<0>(blocks[i]) + n * rep,
-            std::get<1>(blocks[i]));
+            std::get<1>(blocks[i]).value());
         EXPECT_EQ(blk.value(), rblk);
       }
     }
