@@ -35,20 +35,29 @@ TEST(DataDistribution, AllBlocks) {
 
   const std::size_t block_size = 3, group_size = 2, axis_length = 14;
 
+  std::size_t max_size = 0;
   auto dd =
     DataDistributionFactory::cyclic(block_size, group_size, axis_length);
   for (std::size_t rank = 0; rank < dd->order(); ++rank) {
     std::vector<block_t> blks;
+    std::size_t size = 0;
     for (std::size_t i = rank * block_size;
          i < axis_length;
-         i += block_size * group_size)
-      blks.push_back(block_t(i, std::min(i + block_size, axis_length) - i));
+         i += block_size * group_size) {
+      auto sz = std::min(i + block_size, axis_length) - i;
+      blks.push_back(block_t(i, sz));
+      size += sz;
+    }
     EXPECT_EQ(dd->blocks(rank), blks);
+    EXPECT_EQ(dd->size(rank), size);
+    max_size = std::max(max_size, size);
   }
+  EXPECT_EQ(dd->max_size(), max_size);
 
   // can't get all blocks of unbounded distribution
   dd = DataDistributionFactory::unpartitioned();
   EXPECT_THROW(dd->blocks(0), std::domain_error);
+  EXPECT_FALSE(dd->size(0));
 }
 
 TEST(DataDistribution, IteratorLifecycle) {

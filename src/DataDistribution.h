@@ -132,6 +132,28 @@ public:
     return begin(rank)->take_all_blocked();
   }
 
+  std::optional<std::size_t>
+  size(std::size_t rank) const {
+    auto it = begin(rank);
+    if (it->is_unbounded())
+      return std::nullopt;
+    else
+      return it->take_all().size();
+  }
+
+  std::optional<std::size_t>
+  max_size() const {
+    std::optional<std::size_t> result = 0;
+    for (std::size_t rank = 0; result && rank < m_order; ++rank) {
+      auto sz = size(rank);
+      if (sz)
+        result = std::max(result.value(), sz.value());
+      else
+        result = sz;
+    }
+    return result;
+  }
+
   std::string
   show() const {
     std::ostringstream result;
