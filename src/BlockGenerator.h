@@ -29,24 +29,25 @@ public:
     std::optional<std::size_t> axis_length;
   };
 
-  static State
-  initial_state(
+  static constexpr auto
+  initial_states(
     std::size_t block_length,
-    std::size_t group_size,
-    std::optional<std::size_t> axis_length,
-    std::size_t group_index) {
+    std::size_t order,
+    std::optional<std::size_t> axis_length) {
 
-    if (group_index >= group_size)
-      throw std::domain_error("group_index is greater than or equal to group_size");
+    return [=](std::size_t rank) {
+      if (rank >= order)
+        throw std::domain_error("rank is greater than or equal to order");
 
-    std::size_t offset = group_index * block_length;
+      std::size_t offset = rank * block_length;
 
-    return
-      State{
+      return
+        State{
         block_length,
-        block_length * group_size,
-        std::min(offset, axis_length.value_or(offset)),
-        axis_length};
+          block_length * order,
+          std::min(offset, axis_length.value_or(offset)),
+          axis_length};
+    };
   }
 
   static std::tuple<State, std::optional<block_t> >
@@ -84,33 +85,41 @@ public:
     std::size_t block_offset;
   };
 
-  static State
-  initial_state(
-    const std::vector<block_t>& blocks,
+  static auto
+  initial_states(
+    const std::vector<std::vector<block_t> >& all_blocks,
     std::optional<std::size_t> axis_length) {
 
-    for (std::size_t i = 1; i < blocks.size(); ++i)
-      if (std::get<0>(blocks[i])
-          < std::get<0>(blocks[i - 1]) + std::get<1>(blocks[i - 1]))
-        throw std::domain_error("overlapping blocks");
+    return [=](std::size_t rank) {
+      if (rank >= all_blocks.size())
+        throw std::domain_error("rank is greater than or equal to order");
 
-    auto brep =
-      std::find_if(
-        std::begin(blocks),
-        std::end(blocks),
-        [](auto& b) { return std::get<1>(b) == 0; });
+      auto blocks = &all_blocks[rank];
 
-    if (!axis_length && brep == std::end(blocks) && blocks.size() > 0) {
-      std::size_t b0, blen;
-      std::tie(b0, blen) = blocks[blocks.size() - 1];
-      axis_length = b0 + blen;
+      for (std::size_t i = 1; i < blocks->size(); ++i)
+        if (std::get<0>((*blocks)[i])
+            < std::get<0>((*blocks)[i - 1]) + std::get<1>((*blocks)[i - 1]))
+          throw std::domain_error("overlapping blocks");
+
+      auto brep =
+        std::find_if(
+          std::begin(*blocks),
+          std::end(*blocks),
+          [](auto& b) { return std::get<1>(b) == 0; });
+
+      auto alen = axis_length;
+      if (!alen && brep == std::end(*blocks) && blocks->size() > 0) {
+        std::size_t b0, blen;
+        std::tie(b0, blen) = (*blocks)[blocks->size() - 1];
+        alen = b0 + blen;
+      };
+
+      if (brep != std::end(*blocks))
+        ++brep;
+
+      return
+        State{std::vector<block_t>(std::begin(*blocks), brep), alen, 0, 0};
     };
-
-    if (brep != std::end(blocks))
-      ++brep;
-
-    return
-      State{std::vector<block_t>(std::begin(blocks), brep), axis_length, 0, 0};  
   }
 
   static std::tuple<State, std::optional<block_t> >

@@ -119,25 +119,40 @@ public:
   virtual ~DataDistribution() {}
 
   virtual std::unique_ptr<Iterator>
-  begin() const = 0;
+  begin(std::size_t rank) const = 0;
 
   std::vector<block_t>
-  blocks() const {
-    return begin()->take_all_blocked();
+  blocks(std::size_t rank) const {
+    return begin(rank)->take_all_blocked();
   }
 
   std::string
   show() const {
-    std::ostringstream result("[");
-    const char *sep = "";
-    for (const auto& blk : begin()->take_all_blocked()) {
-      result << sep
-             << "(" << std::get<0>(blk) << "," << std::get<1>(blk) << ")";
-      sep = ",";
+    std::ostringstream result("{");
+    const char *rksep = "";
+    for (std::size_t rank = 0; rank < m_order; ++rank){
+      result << rksep << rank << ": [";
+      const char *blksep = "";
+      for (const auto& blk : begin(rank)->take_all_blocked()) {
+        result << blksep
+               << "(" << std::get<0>(blk) << "," << std::get<1>(blk) << ")";
+        blksep = ",";
+      }
+      result << "]";
+      rksep = "; ";
     }
-    result << "]";
+    result << "}";
     return result.str();
   }
+
+  std::size_t
+  order() const {
+    return m_order;
+  }
+
+protected:
+
+  std::size_t m_order;
 };
 
 // GeneratorDataDistribution
@@ -157,6 +172,8 @@ public:
   typedef std::function<std::tuple<S, std::optional<block_t> >(const S&)>
   generator_t;
 
+  typedef std::function<S(std::size_t)> initializer_t;
+
   // Note that the following static constructor methods return a new instance,
   // but in a shared_ptr rather than a unique_ptr. The reason is that an
   // Iterator instance pointer returned from DataDistribution::begin() holds a
@@ -166,14 +183,14 @@ public:
   // the DataDistribution over the lifetime of an Iterator.
 
   static std::shared_ptr<DataDistribution>
-  make(const generator_t& generator, const S& state) {
-    return std::make_shared<GeneratorDataDistribution>(generator, state);
-  }
-
-  static std::shared_ptr<DataDistribution>
-  make(const generator_t& generator, S&& state) {
-    return
-      std::make_shared<GeneratorDataDistribution>(generator, std::move(state));
+  make(
+    const generator_t& generator,
+    const initializer_t& initializer,
+    std::size_t order) {
+    return std::make_shared<GeneratorDataDistribution>(
+      generator,
+      initializer,
+      order);
   }
 
   GeneratorDataDistribution&
@@ -188,7 +205,8 @@ public:
   GeneratorDataDistribution&
   operator=(GeneratorDataDistribution&& other) {
     m_generator = std::move(other).m_generator;
-    m_init_state = std::move(other).m_init_state;
+    m_initializer = std::move(other).m_initializer;
+    m_order = std::move(other).m_order;
     return *this;
   }
 
@@ -240,9 +258,11 @@ public:
   };
 
   std::unique_ptr<Iterator>
-  begin() const override {
+  begin(std::size_t rank) const override {
+    if (rank >= m_order)
+      throw std::domain_error("rank is greater than or equal to order");
     std::shared_ptr<const generator_t> gen(shared_from_this(), &m_generator);
-    return std::make_unique<GeneratorIterator>(gen, m_init_state);
+    return std::make_unique<GeneratorIterator>(gen, m_initializer(rank));
   }
 
 protected:
@@ -251,38 +271,43 @@ protected:
   swap(GeneratorDataDistribution& other) {
     using std::swap;
     swap(m_generator, other.m_generator);
-    swap(m_init_state, other.m_init_state);
+    swap(m_initializer, other.m_initializer);
+    swap(m_order, other.m_order);
   }
 
 public:
 
   // use of the static make() functions is preferred to use of the following
   // constructors
-  GeneratorDataDistribution(const generator_t& generator, const S& state)
+  GeneratorDataDistribution(
+    const generator_t& generator,
+    const initializer_t& initializer,
+    std::size_t order)
     : m_generator(generator)
-    , m_init_state(state) {
-  }
+    , m_initializer(initializer) {
 
-  GeneratorDataDistribution(const generator_t& generator, S&& state)
-    : m_generator(generator)
-    , m_init_state(std::move(state)) {
+    m_order = order;
   }
 
   GeneratorDataDistribution(const GeneratorDataDistribution& other)
     : m_generator(other.m_generator)
-    , m_init_state(other.m_init_state) {
+    , m_initializer(other.m_initializer) {
+
+    m_order = other.m_order;
   }
 
   GeneratorDataDistribution(GeneratorDataDistribution&& other)
     : m_generator(std::move(other).m_generator)
-    , m_init_state(std::move(other).m_init_state) {
+    , m_initializer(std::move(other).m_initializer) {
+
+    m_order = std::move(other).m_order;
   }
 
 private:
 
   generator_t m_generator;
 
-  S m_init_state;
+  initializer_t m_initializer;;
 };
 
 class DataDistributionFactory {
@@ -296,36 +321,36 @@ public:
   static std::shared_ptr<DataDistribution>
   cyclic(
     std::size_t block_length,
-    std::size_t group_size,
-    std::optional<std::size_t> axis_length,
-    std::size_t group_index) {
+    std::size_t order,
+    std::optional<std::size_t> axis_length) {
 
     return
       GeneratorDataDistribution<CyclicGenerator::State>::make(
         CyclicGenerator::apply,
-        CyclicGenerator::initial_state(
-          block_length,
-          group_size,
-          axis_length,
-          group_index));
+        CyclicGenerator::initial_states(block_length, order, axis_length),
+        order);
   }
 
   // (enumerated) block sequence data distribution
   //
-  // * a block of length 0 is used to indicate the start of a repetition (any
-  //   blocks in the sequence following such a block are ignored)
+  // * the number of sequence vectors is equal to the distribution order
+  //
+  // * a block of length 0 at some rank is used to indicate the start of a
+  //   repetition for that rank (any blocks in the sequence following such a
+  //   block are ignored)
   //
   // * an empty 'axis_length' is used to indicate an indefinite axis length
   //
   static std::shared_ptr<DataDistribution>
   block_sequence(
-    const std::vector<block_t>& blocks,
+    const std::vector<std::vector<block_t> >& all_blocks,
     std::optional<std::size_t> axis_length) {
 
     return
       GeneratorDataDistribution<BlockSequenceGenerator::State>::make(
         BlockSequenceGenerator::apply,
-        BlockSequenceGenerator::initial_state(blocks, axis_length));
+        BlockSequenceGenerator::initial_states(all_blocks, axis_length),
+        all_blocks.size());
   }
 
   // generic data distribution factory method
@@ -334,12 +359,10 @@ public:
   static std::shared_ptr<DataDistribution>
   block_generator(
     const typename GeneratorDataDistribution<S>::generator_t& generator,
-    S&& init_state) {
+    const typename GeneratorDataDistribution<S>::initializer_t& initializer,
+    std::size_t order) {
 
-    return
-      GeneratorDataDistribution<S>::make(
-        generator,
-        std::forward<S>(init_state));
+    return GeneratorDataDistribution<S>::make(generator, initializer, order);
   }
 };
 

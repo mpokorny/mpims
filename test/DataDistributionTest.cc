@@ -16,19 +16,35 @@ ceil(T num, T denom) {
   return (num + (denom - 1)) / denom;
 }
 
+TEST(DataDistribution, OrderValue) {
+
+  const std::size_t block_size = 3, group_size = 2, axis_length = 14;
+  auto cy =
+    DataDistributionFactory::cyclic(block_size, group_size, axis_length);
+  EXPECT_EQ(cy->order(), group_size);
+
+
+  const std::vector<std::vector<block_t> > all_blocks{
+    std::vector{block_t(0, 2), block_t(5, 3), block_t(12, 1)},
+      std::vector{block_t(2, 2), block_t(8, 3), block_t(13, 1)}};
+  auto bs =
+    DataDistributionFactory::block_sequence(all_blocks, axis_length);
+  EXPECT_EQ(bs->order(), all_blocks.size());
+}
+
 TEST(DataDistribution, AllBlocks) {
 
   const std::size_t block_size = 3, group_size = 2, axis_length = 14;
 
-  for (std::size_t gi = 0; gi < group_size; ++gi) {
+  auto dd =
+    DataDistributionFactory::cyclic(block_size, group_size, axis_length);
+  for (std::size_t rank = 0; rank < dd->order(); ++rank) {
     std::vector<block_t> blks;
-    for (std::size_t i = gi * block_size;
+    for (std::size_t i = rank * block_size;
          i < axis_length;
          i += block_size * group_size)
       blks.push_back(block_t(i, std::min(i + block_size, axis_length) - i));
-    auto dd =
-      DataDistributionFactory::cyclic(block_size, group_size, axis_length, gi);
-    EXPECT_EQ(dd->blocks(), blks);
+    EXPECT_EQ(dd->blocks(rank), blks);
   }
 }
 
@@ -36,15 +52,21 @@ TEST(DataDistribution, IteratorLifecycle) {
 
   const std::size_t block_size = 3, group_size = 2, axis_length = 14;
 
-  std::unique_ptr<DataDistribution::Iterator> it;
+  std::unique_ptr<DataDistribution::Iterator> it0, it1;
   {
     auto dd =
-      DataDistributionFactory::cyclic(block_size, group_size, axis_length, 0);
-    it = dd->begin();
+      DataDistributionFactory::cyclic(block_size, group_size, axis_length);
+    it0 = dd->begin(0);
+    it1 = dd->begin(1);
   }
-  EXPECT_NO_THROW(**it);
-  EXPECT_NO_THROW(++(*it));
-  EXPECT_NO_THROW(**it);
+  EXPECT_NO_THROW(**it0);
+  EXPECT_NO_THROW(++(*it0));
+  EXPECT_NO_THROW(**it0);
+  it0.reset();
+
+  EXPECT_NO_THROW(**it1);
+  EXPECT_NO_THROW(++(*it1));
+  EXPECT_NO_THROW(**it1);
 }
 
 TEST(DataDistribution, IteratePastEnd) {
@@ -52,8 +74,8 @@ TEST(DataDistribution, IteratePastEnd) {
   const std::size_t block_size = 3, group_size = 2, axis_length = 14;
 
   auto it =
-    DataDistributionFactory::cyclic(block_size, group_size, axis_length, 0)->
-    begin();
+    DataDistributionFactory::cyclic(block_size, group_size, axis_length)->
+    begin(0);
   EXPECT_NO_THROW(**it);
   EXPECT_NO_THROW(it->take_all());
   EXPECT_ANY_THROW(**it);
@@ -63,18 +85,18 @@ TEST(DataDistribution, Iteration) {
 
   const std::size_t block_size = 3, group_size = 2, axis_length = 14;
 
-  for (std::size_t gi = 0; gi < group_size; ++gi) {
+  auto dd =
+    DataDistributionFactory::cyclic(block_size, group_size, axis_length);
+  for (std::size_t rank = 0; rank < dd->order(); ++rank) {
     std::vector<size_t> indices;
-    for (std::size_t i = gi * block_size;
+    for (std::size_t i = rank * block_size;
          i < axis_length;
          i += block_size * group_size) {
       std::size_t len = std::min(i + block_size, axis_length) - i;
       for (std::size_t j = 0; j < len; ++j)
         indices.push_back(i + j);
     }
-    auto it =
-      DataDistributionFactory::cyclic(block_size, group_size, axis_length, gi)->
-      begin();
+    auto it = dd->begin(rank);
     EXPECT_TRUE(
       std::all_of(
         std::begin(indices),
@@ -92,18 +114,18 @@ TEST(DataDistribution, IteratorTake) {
 
   const std::size_t block_size = 3, group_size = 2, axis_length = 14;
 
-  for (std::size_t gi = 0; gi < group_size; ++gi) {
+  auto dd =
+    DataDistributionFactory::cyclic(block_size, group_size, axis_length);
+  for (std::size_t rank = 0; rank < dd->order(); ++rank) {
     std::vector<size_t> indices;
-    for (std::size_t i = gi * block_size;
+    for (std::size_t i = rank * block_size;
          i < axis_length;
          i += block_size * group_size) {
       std::size_t len = std::min(i + block_size, axis_length) - i;
       for (std::size_t j = 0; j < len; ++j)
         indices.push_back(i + j);
     }
-    auto dd =
-      DataDistributionFactory::cyclic(block_size, group_size, axis_length, gi);
-    auto it = dd->begin();
+    auto it = dd->begin(rank);
     EXPECT_TRUE(
       std::all_of(
         std::begin(indices),
@@ -113,7 +135,7 @@ TEST(DataDistribution, IteratorTake) {
         }));
     EXPECT_TRUE(it->at_end());
 
-    it = dd->begin();
+    it = dd->begin(rank);
     EXPECT_EQ(it->take_all(), indices);
     EXPECT_TRUE(it->at_end());
   }
@@ -124,9 +146,12 @@ TEST(DataDistribution, IteratorTakeBlocked) {
   const std::size_t block_size = 3, group_size = 2, axis_length = 14;
   const std::size_t group_len = block_size * group_size;
 
-  for (std::size_t gi = 0; gi < group_size; ++gi) {
+  auto dd =
+    DataDistributionFactory::cyclic(block_size, group_size, axis_length);
+
+  for (std::size_t rank = 0; rank < dd->order(); ++rank) {
     std::vector<size_t> indices;
-    for (std::size_t i = gi * block_size;
+    for (std::size_t i = rank * block_size;
          i < axis_length;
          i += block_size * group_size) {
       std::size_t len = std::min(i + block_size, axis_length) - i;
@@ -134,15 +159,12 @@ TEST(DataDistribution, IteratorTakeBlocked) {
         indices.push_back(i + j);
     }
 
-    auto dd =
-      DataDistributionFactory::cyclic(block_size, group_size, axis_length, gi);
-
     for (
       std::size_t tksz = 1;
       tksz < ceil(axis_length, group_len) * block_size;
       ++tksz) {
 
-      auto it = dd->begin();
+      auto it = dd->begin(rank);
 
       auto idx = std::begin(indices);
       while (idx != std::end(indices)) {
