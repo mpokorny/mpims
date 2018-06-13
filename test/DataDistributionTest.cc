@@ -23,7 +23,6 @@ TEST(DataDistribution, OrderValue) {
     DataDistributionFactory::cyclic(block_size, group_size, axis_length);
   EXPECT_EQ(cy->order(), group_size);
 
-
   const std::vector<std::vector<block_t> > all_blocks{
     std::vector{block_t(0, 2), block_t(5, 3), block_t(12, 1)},
       std::vector{block_t(2, 2), block_t(8, 3), block_t(13, 1)}};

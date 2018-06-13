@@ -128,10 +128,11 @@ public:
 
   std::string
   show() const {
-    std::ostringstream result("{");
+    std::ostringstream result;
+    result << "{";
     const char *rksep = "";
     for (std::size_t rank = 0; rank < m_order; ++rank){
-      result << rksep << rank << ": [";
+      result << rksep << rank << ":[";
       const char *blksep = "";
       for (const auto& blk : begin(rank)->take_all_blocked()) {
         result << blksep
