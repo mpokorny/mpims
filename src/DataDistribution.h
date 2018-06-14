@@ -16,6 +16,8 @@
 
 namespace mpims {
 
+typedef std::tuple<std::size_t, std::size_t> finite_block_t;
+
 // blocks()
 //
 // create vector of blocks from iterator over indices
@@ -26,10 +28,10 @@ template <
     std::is_convertible<
       typename std::iterator_traits<InputIterator>::value_type,
       std::size_t>::value>::type>
-std::vector<block_t>
+std::vector<finite_block_t>
 blocks(const InputIterator& first, const InputIterator& last) {
-  std::vector<block_t> result;
-  std::optional<block_t> block;
+  std::vector<finite_block_t> result;
+  std::optional<finite_block_t> block;
   std::for_each(
     first,
     last,
@@ -97,7 +99,7 @@ public:
       return result;
     }
 
-    std::vector<block_t>
+    std::vector<finite_block_t>
     take_blocked(std::size_t n = 1) {
       auto seq = take(n);
       return mpims::blocks(std::begin(seq), std::end(seq));
@@ -115,7 +117,7 @@ public:
       return result;
     }
 
-    std::vector<block_t>
+    std::vector<finite_block_t>
     take_all_blocked() {
       auto seq = take_all();
       return mpims::blocks(std::begin(seq), std::end(seq));
@@ -141,7 +143,7 @@ public:
   virtual std::unique_ptr<Iterator>
   begin(std::size_t rank) const = 0;
 
-  std::vector<block_t>
+  std::vector<finite_block_t>
   blocks(std::size_t rank) const {
     return begin(rank)->take_all_blocked();
   }
@@ -171,6 +173,30 @@ public:
   std::optional<std::size_t>
   period() const {
     return m_period;
+  }
+
+  bool
+  operator==(const DataDistribution& rhs) const {
+    bool result = false;
+    auto op = period();
+    if (op) {
+      if (op == rhs.period()) {
+        auto ltp = [p = op.value()](std::size_t i) { return i < p; };
+        for (std::size_t rank = 0; result && rank < m_order; ++rank)
+          result =
+            begin(rank)->take_while(ltp) == rhs.begin(rank)->take_while(ltp);
+      }
+    } else if (!rhs.period()) {
+      result = true;
+      for (std::size_t rank = 0; result && rank < m_order; ++rank)
+        result = blocks(rank) == rhs.blocks(rank);
+    }
+    return result;
+  }
+
+  bool
+  operator!=(const DataDistribution& rhs) const {
+    return !operator==(rhs);
   }
 
   std::string

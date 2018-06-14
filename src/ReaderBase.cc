@@ -14,97 +14,35 @@ void
 ReaderBase::init_iterparams(
   const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
   const std::vector<MSColumns>& traversal_order,
-  const std::unordered_map<MSColumns, DataDistribution>& pgrid,
+  const std::unordered_map<
+  MSColumns,
+  std::shared_ptr<const DataDistribution> >& pgrid,
   int rank,
-  bool debug_log,
   std::shared_ptr<std::vector<IterParams> >& iter_params) {
 
   std::size_t dist_size = 1;
-  std::size_t array_length = 1;
   std::for_each(
     std::begin(ms_shape),
     std::end(ms_shape),
     [&] (const ColumnAxisBase<MSColumns>& ax) {
       // find index of this column in traversal_order
       MSColumns col = ax.id();
-      auto length = ax.length();
       std::size_t traversal_index = 0;
       while (traversal_order[traversal_index] != col)
         ++traversal_index;
 
       // create IterParams for this axis
-      std::size_t num_processes;
-      std::size_t block_size;
-      if (pgrid.count(col) > 0) {
-        auto pg = pgrid.at(col);
-        num_processes = pg.num_processes;
-        block_size = pg.block_size;
-      } else {
-        num_processes = 1;
-        block_size = 1;
-      }
-      std::size_t grid_len = num_processes;
-      std::size_t order = (rank / dist_size) % grid_len;
-      std::size_t block_len = block_size;
-      assert(!length || block_len <= length.value());
-      std::size_t origin = order * block_len;
-      std::size_t stride = grid_len * block_len;
-      std::optional<std::size_t> max_blocks =
-        (length
-         ? std::optional<std::size_t>(ceil(length.value(), stride))
-         : std::nullopt);
-      std::size_t blocked_rem =
-        (length
-         ? (ceil(length.value(), block_len) % grid_len)
-         : 0);
-      std::size_t terminal_block_len;
-      std::size_t max_terminal_block_len;
-      if (blocked_rem == 0) {
-        terminal_block_len = block_len;
-        max_terminal_block_len = block_len;
-      } else if (blocked_rem == 1) {
-        // assert(length.has_value());
-        terminal_block_len = ((order == 0) ? (length.value() % block_len) : 0);
-        max_terminal_block_len = length.value() % block_len;
-      } else {
-        // assert(length.has_value());
-        terminal_block_len =
-          ((order < blocked_rem - 1)
-           ? block_len
-           : ((order == blocked_rem - 1) ? (length.value() % block_len) : 0));
-        max_terminal_block_len = block_len;
-      }
+      auto& dd = pgrid.at(col);
+      std::size_t grid_len = dd->order();
       (*iter_params)[traversal_index] =
-        IterParams { col, false, false, 0, array_length,
-                     origin, stride, block_len, terminal_block_len,
-                     max_terminal_block_len, length, max_blocks };
-      if (debug_log) {
-        auto l = (*iter_params)[traversal_index].length;
-        auto mb = (*iter_params)[traversal_index].max_blocks;
-        std::clog << "(" << rank << ") "
-                  << mscol_nickname(col)
-                  << " length: "
-                  << (l ? std::to_string(l.value()) : "indeterminate")
-                  << ", origin: "
-                  << (*iter_params)[traversal_index].origin
-                  << ", stride: "
-                  << (*iter_params)[traversal_index].stride
-                  << ", block_len: "
-                  << (*iter_params)[traversal_index].block_len
-                  << ", max_blocks: "
-                  << (mb ? std::to_string(mb.value()) : "indeterminate")
-                  << ", terminal_block_len: "
-                  << (*iter_params)[traversal_index].terminal_block_len
-                  << ", max_terminal_block_len: "
-                  << (*iter_params)[traversal_index].max_terminal_block_len
-                  << std::endl;
-      }
+        IterParams(col, ax.length(), dd, (rank / dist_size) % grid_len);
       dist_size *= grid_len;
     });
 }
 
 void
 ReaderBase::init_traversal_partitions(
+  MPI_Comm comm,
   const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
   std::size_t& buffer_size,
   std::shared_ptr<std::vector<IterParams> >& iter_params,
@@ -132,26 +70,22 @@ ReaderBase::init_traversal_partitions(
   while (start_buffer != iter_params->rend()) {
     start_buffer->array_length = array_length;
     // len is the number of values along this axis that can be fit into the
-    // remaining buffer space, with a granularity of the block_len of this axis
+    // remaining buffer space; subject to the number of values being a multiple
+    // of the number of elements in one period (or 1 if the axis is not
+    // periodic)
+    auto blk_factor =  start_buffer->period_max_factor_size();
     std::size_t len =
-      std::min(
-        (max_buffer_length / start_buffer->array_length)
-        / start_buffer->block_len,
-        start_buffer->max_blocks.value_or(1))
-      * start_buffer->block_len;
-    // full_len is the most values any rank will need on this axis
-    std::optional<std::size_t> full_len = start_buffer->max_accessible_length();
+      ((max_buffer_length / start_buffer->array_length) / blk_factor)
+      * blk_factor;
     if (len == 0) {
-      // unable to fit even a single block of values along this axis, so we go
-      // back to the previous axis, then clear fully_in_array and set
+      // unable to fit even the minimum number of values along this axis, so we
+      // go back to the previous axis, then clear fully_in_array and set
       // buffer_capacity in order that the outermost axis that is at least
       // partially in a single buffer always has a strictly positive
       // buffer_capacity
       if (start_buffer != iter_params->rbegin()) {
         --start_buffer;
-        // assert(start_buffer->max_blocks);
-        start_buffer->buffer_capacity =
-          start_buffer->max_blocks.value() * start_buffer->block_len;
+        start_buffer->buffer_capacity = start_buffer->size().value();
         start_buffer->fully_in_array = false;
         break;
       } else {
@@ -167,15 +101,16 @@ ReaderBase::init_traversal_partitions(
         prev_buffer->buffer_capacity = 0;
       }
     }
+    // max_len is the most values any rank will need on this axis
+    std::optional<std::size_t> max_len = start_buffer->max_size();
     // we're done whenever the number of values in the buffer on this axis is
-    // less than full_len (note that we use full_len, and not
-    // start_buffer->accessible_length(), because the latter is not constant
-    // across ranks, and the outcome of this method needs to be invariant across
-    // ranks)
-    if (!full_len || len < full_len.value())
+    // less than max_len (note that we use max_len, and not len, because the
+    // latter is not constant across ranks, and the outcome of this method needs
+    // to be invariant across ranks)
+    if (!max_len || len < max_len.value())
       break;
-    // increase the array size by a factor of full_len
-    array_length *= full_len.value();
+    // increase the array size by a factor of max_len
+    array_length *= max_len.value();
     ++start_buffer;
   }
   // when all axes can fit into the buffer, we need to adjust the
@@ -185,9 +120,7 @@ ReaderBase::init_traversal_partitions(
   // a false fully_in_array value)
   if (start_buffer == iter_params->rend()) {
     --start_buffer;
-    // assert(start_buffer->max_blocks);
-    start_buffer->buffer_capacity =
-      start_buffer->max_blocks.value() * start_buffer->block_len;
+    start_buffer->buffer_capacity = start_buffer->size().value();
     start_buffer->fully_in_array = false;
   }
 
@@ -234,27 +167,21 @@ ReaderBase::init_traversal_partitions(
   // Determine the axis at which the traversal order is incompatible with the MS
   // order, with the knowledge that out of order traversal is OK if the
   // reordering can be done in memory (that, is within a single buffer). This
-  // will define the axis on which the fileview needs to be set. Note that the
-  // fileview may vary with index when the blocking and data distribution result
-  // in a non-uniform final block (i.e, when the buffer_capacity is large enough
-  // that it covers the terminal block, and terminal_block_len is different from
-  // block_len on at least one rank). This potentially oddball fileview is
-  // termed a "tail fileview", since it only occurs at the tail end of the axis
-  // at which the fileview is set.
+  // will define the axis on which the fileview needs to be set.
   {
-    bool ooo = false; /* out-of-order flag */
+    bool ooo = false; // out-of-order flag
     auto ip = iter_params->rbegin();
     while (ip != iter_params->rend()) {
       if (!*inner_fileview_axis) {
         ooo = ooo || out_of_order.count(ip->axis) > 0;
-        // inner_fileview_axis is set if we've reached the out of order
-        // condition and the entire axis is not held in a single buffer, or the
-        // axis at which buffer_capacity is set has a non-uniform final block
-        if ((ooo
-             && !(ip->fully_in_array
-                  || (ip->max_blocks
-                      && (ip->buffer_capacity >= ip->max_accessible_length()))))
-            || !std::get<1>(tail_buffer_blocks(*ip)))
+        bool complete_coverage =
+          ip->fully_in_array ||
+          map(
+            ip->max_size(),
+            [ip](const auto& sz) { return sz <= ip->buffer_capacity; }).
+          value_or(false);
+        if (!complete_coverage
+            && (ooo || !ip->selection_repeats_uniformly(comm)))
           *inner_fileview_axis = ip->axis;
       }
       ip->within_fileview = !inner_fileview_axis->has_value();
@@ -263,18 +190,11 @@ ReaderBase::init_traversal_partitions(
   }
 }
 
-std::tuple<
-  std::unique_ptr<MPI_Datatype, DatatypeDeleter>,
-  std::size_t>
-ReaderBase::vector_datatype(
-  MPI_Aint value_extent,
+std::tuple<std::unique_ptr<MPI_Datatype, DatatypeDeleter>, std::size_t>
+ReaderBase::finite_compound_datatype(
   std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
   std::size_t dt_extent,
-  std::size_t offset,
-  std::size_t num_blocks,
-  std::size_t block_len,
-  std::size_t terminal_block_len,
-  std::size_t stride,
+  const std::vector<finite_block_t>& blocks,
   std::size_t len,
   int rank,
   bool debug_log) {
@@ -282,252 +202,162 @@ ReaderBase::vector_datatype(
   std::ostringstream oss;
   if (debug_log) {
     oss << "(" << rank << ") "
-        << "vector_datatype(ve " << value_extent
-        << ", de " << dt_extent
-        << ", of " << offset
-        << ", nb " << num_blocks
-        << ", bl " << block_len
-        << ", tb " << terminal_block_len
-        << ", st " << stride
-        << ", ln " << len
+        << "finite_compund_datatype(de " << dt_extent
+        << ", b [";
+    const char* sep = "";
+    std::for_each(
+      std::begin(blocks),
+      std::end(blocks),
+      [&oss, &sep](auto& blk) {
+        oss << sep << "(" << std::get<0>(blk)
+            << "," << std::get<1>(blk)
+            << ")";
+        sep = ",";
+      });
+    oss << "], ln " << len
         << ")";
   }
-  auto result_dt = datatype();
-  MPI_Aint result_dt_extent = len * dt_extent * value_extent;
-  auto nb = num_blocks;
-  if (terminal_block_len == 0) {
-    --nb;
-    terminal_block_len = block_len;
+
+  // scan blocks to determine whether block size and/or block stride are
+  // constant
+  std::optional<std::size_t> stride;
+  std::optional<std::size_t> block_len;
+  std::size_t num_blocks = blocks.size();
+  std::size_t offset;
+  std::tie(offset, block_len) = blocks[0];
+  if (num_blocks == 1) {
+    stride = block_len.value();
+  } else {
+    std::size_t prev_b0 = offset;
+    std::size_t cur_b0, cur_blen;
+    std::tie(cur_b0, cur_blen) = blocks[1];
+    stride = cur_b0 - prev_b0;
+    if (cur_blen != block_len.value())
+      block_len.reset();
+    std::for_each(
+      std::begin(blocks) + 2,
+      std::end(blocks),
+      [&](auto& blk) {
+        prev_b0 = cur_b0;
+        std::tie(cur_b0, cur_blen) = blk;
+        auto s = cur_b0 - prev_b0;
+        if (stride && s != stride.value())
+          stride.reset();
+        if (block_len && cur_blen != block_len.value())
+          block_len.reset();
+      });
   }
-  if (nb * block_len > 1 || offset > 0) {
-    if (block_len == terminal_block_len) {
-      if (block_len == stride) {
-        if (offset == 0) {
-          if (debug_log)
-            oss << "; contiguous " << nb * block_len;
-          MPI_Type_contiguous(nb * block_len, *dt, result_dt.get());
-        } else {
-          if (debug_log)
-            oss << "; idxblk 1, " << nb * block_len
-                << ", " << offset;
-          int displacements = offset;
-          MPI_Type_create_indexed_block(
-            1,
-            nb * block_len,
-            &displacements,
-            *dt,
-            result_dt.get());
-        }
+
+  // create compound datatype
+  auto compound_dt = datatype();
+  if (block_len) {
+    if (stride) {
+      // these following datatypes are created without any leading offset
+      if (stride == block_len) {
+        //contiguous datatype
+        if (debug_log)
+          oss << "; contiguous " << num_blocks * block_len.value();
+        MPI_Type_contiguous(
+          num_blocks * block_len.value(),
+          *dt,
+          compound_dt.get());
       } else {
-        if (offset == 0) {
-          if (debug_log)
-            oss << "; vector " << nb
-                << "," << block_len
-                << "," << stride;
-          MPI_Type_vector(nb, block_len, stride, *dt, result_dt.get());
-        } else {
-          if (debug_log)
-            oss << "; idxblk " << nb
-                << ", " << block_len
-                << ", " << offset
-                << ", " << stride;
-          auto displacements = std::make_unique<int[]>(nb);
-          for (std::size_t i = 0; i < nb; ++i)
-            displacements[i] = offset + i * stride;
-          MPI_Type_create_indexed_block(
-            nb,
-            block_len,
-            displacements.get(),
-            *dt,
-            result_dt.get());
-        }
+        // vector datatype
+        if (debug_log)
+          oss << "; vector " << num_blocks
+              << "," << block_len.value()
+              << "," << stride.value();
+        MPI_Type_vector(
+          num_blocks,
+          block_len.value(),
+          stride.value(),
+          *dt,
+          compound_dt.get());
       }
-    } else {
-      auto blocklengths = std::make_unique<int[]>(nb);
-      auto displacements = std::make_unique<int[]>(nb);
-      for (std::size_t i = 0; i < nb; ++i) {
-        blocklengths[i] = block_len;
-        displacements[i] = offset + i * stride;
+    } else  {
+      // indexed block datatype
+      if (debug_log) {
+        oss << "; idxblk " << num_blocks
+            << ", " << block_len.value() << ", [";
+        const char* sep = "";
+        std::for_each(
+          std::begin(blocks),
+          std::end(blocks),
+          [&oss, &sep, &offset](auto& blk) {
+            oss << sep << std::get<0>(blk);
+            sep = ",";
+          });
+        oss << "]";
       }
-      blocklengths[nb - 1] = terminal_block_len;
-      if (debug_log)
-        oss << "; indexed " << nb
-            << "," << block_len
-            << "," << terminal_block_len
-            << "," << offset
-            << "," << stride;
-      MPI_Type_indexed(
-        nb,
-        blocklengths.get(),
+      auto displacements = std::make_unique<int[]>(num_blocks);
+      for (std::size_t i = 0; i < num_blocks; ++i)
+        displacements[i] = std::get<0>(blocks[i]);
+      MPI_Type_create_indexed_block(
+        num_blocks,
+        block_len.value(),
         displacements.get(),
         *dt,
-        result_dt.get());
-    }
-    dt = std::move(result_dt);
-    result_dt = datatype();
-  }
-  MPI_Type_create_resized(*dt, 0, result_dt_extent, result_dt.get());
-  if (debug_log)
-    oss << "; resize " << result_dt_extent;
-  if (debug_log) {
-    oss << std::endl;
-    std::clog << oss.str();
-  }
-  return std::make_tuple(std::move(result_dt), result_dt_extent / value_extent);
-}
-
-std::tuple<std::unique_ptr<MPI_Datatype, DatatypeDeleter>, std::size_t, bool>
-ReaderBase::compound_datatype(
-  MPI_Aint value_extent,
-  std::unique_ptr<MPI_Datatype, DatatypeDeleter>& dt,
-  std::size_t dt_extent,
-  std::size_t offset,
-  std::size_t stride,
-  std::size_t num_blocks,
-  std::size_t block_len,
-  std::size_t terminal_block_len,
-  const std::optional<std::size_t>& len,
-  int rank,
-  bool debug_log) {
-
-  std::unique_ptr<MPI_Datatype, DatatypeDeleter> result_dt;
-  std::size_t result_dt_extent;
-
-  // create (blocked) vector of fileview_datatype elements
-  std::tie(result_dt, result_dt_extent) =
-    vector_datatype(
-      value_extent,
-      dt,
-      dt_extent,
-      offset,
-      num_blocks,
-      block_len,
-      terminal_block_len,
-      stride,
-      len.value_or(stride),
-      rank,
-      debug_log);
-  return
-    std::make_tuple(std::move(result_dt), result_dt_extent, !len.has_value());
-}
-
-std::tuple<std::optional<std::tuple<std::size_t, std::size_t> >, bool>
-ReaderBase::tail_buffer_blocks(const IterParams& ip) {
-  std::optional<std::tuple<std::size_t, std::size_t> > tb;
-  std::size_t tail_num_blocks, tail_terminal_block_len;
-  bool uniform;
-  if (!ip.fully_in_array) {
-    if (ip.length) {
-      std::size_t capacity = std::max(ip.buffer_capacity, 1uL);
-      auto nr = ip.stride / ip.block_len;
-      auto full_buffer_capacity = capacity * nr;
-      auto nb = ceil(ip.length.value(), full_buffer_capacity);
-      auto tail_origin = full_buffer_capacity * (nb - 1);
-      auto tail_rem = ip.length.value() - tail_origin;
-      tail_num_blocks = ceil(tail_rem, ip.stride);
-      auto terminal_rem = tail_rem % ip.stride;
-      if (ip.origin < terminal_rem) {
-        auto next = ip.origin + ip.block_len;
-        if (next >= terminal_rem)
-          tail_terminal_block_len = terminal_rem - ip.origin;
-        else
-          tail_terminal_block_len = ip.block_len;
-      } else {
-        tail_terminal_block_len = 0;
-      }
-      uniform = tail_rem % ip.stride == 0;
-      tb = std::make_tuple(tail_num_blocks, tail_terminal_block_len);
-    } else {
-      tb = std::nullopt;
-      uniform = true;
+        compound_dt.get());
+      // offset has been accounted for, set it to zero
+      offset = 0;
     }
   } else {
-    tb = std::make_tuple(0, 0);
-    uniform = true;
+    // indexed datatype
+    if (debug_log) {
+      oss << "; indexed " << num_blocks
+          << ", [";
+      const char* sep = "";
+      std::for_each(
+        std::begin(blocks),
+        std::end(blocks),
+        [&oss, &sep, &offset](auto& blk) {
+          oss << sep << "(" << std::get<0>(blk)
+              << "," << std::get<1>(blk) << ")";
+          sep = ",";
+        });
+      oss << "]";
+    }
+    auto blocklengths = std::make_unique<int[]>(num_blocks);
+    auto displacements = std::make_unique<int[]>(num_blocks);
+    for (std::size_t i = 0; i < num_blocks; ++i) 
+      std::tie(displacements[i], blocklengths[i]) = blocks[i];
+    MPI_Type_indexed(
+      num_blocks,
+      blocklengths.get(),
+      displacements.get(),
+      *dt,
+      compound_dt.get());
+    // offset has been accounted for, set it to zero
+    offset = 0;
   }
-  return std::make_tuple(tb, uniform);
-}
+  if (debug_log) {
+    oss << "; resize "
+        << offset << ", " << len
+        << std::endl;
+    std::clog << oss.str();
+  }
+  if (offset > 0) {
+    auto cdt = std::move(compound_dt);
+    compound_dt = datatype();
+    int blocklength = 1;
+    MPI_Aint displacement = offset * dt_extent;
+    MPI_Type_create_hindexed(
+      1,
+      &blocklength,
+      &displacement,
+      *cdt,
+      compound_dt.get());
+  }
+  std::size_t result_dt_extent = len * dt_extent;
+  auto result_dt = datatype();
+  MPI_Type_create_resized(
+    *compound_dt,
+    0,
+    result_dt_extent,
+    result_dt.get());
 
-std::unique_ptr<std::vector<IndexBlockSequenceMap<MSColumns> > >
-ReaderBase::make_index_block_sequences(
-  const std::shared_ptr<const std::vector<IterParams> >& iter_params) {
-  std::unique_ptr<std::vector<IndexBlockSequenceMap<MSColumns> > > result(
-    new std::vector<IndexBlockSequenceMap<MSColumns> >());
-  std::for_each(
-    std::begin(*iter_params),
-    std::end(*iter_params),
-    [&result](const IterParams& ip) {
-      std::vector<std::vector<IndexBlock> > blocks;
-      if (ip.fully_in_array || ip.buffer_capacity > 0) {
-        auto accessible_length = ip.accessible_length();
-        std::vector<IndexBlock> merged_blocks;
-        if (accessible_length) {
-          // merge contiguous blocks
-          std::size_t start = ip.origin;
-          std::size_t end = ip.origin + ip.block_len;
-          for (std::size_t b = 1; b < ip.max_blocks.value(); ++b) {
-            std::size_t s = ip.origin + b * ip.stride;
-            if (s > end) {
-              merged_blocks.emplace_back(start, end - start);
-              start = s;
-            }
-            end = s + ip.block_len;
-          }
-          end -= ip.block_len - ip.terminal_block_len;
-          merged_blocks.emplace_back(start, end - start);
-        } else {
-          // create enough blocks to fit buffer_capacity, merging contiguous
-          // blocks
-          assert(ip.buffer_capacity % ip.block_len == 0);
-          auto nb = ip.buffer_capacity / ip.block_len;
-          auto stride = nb * ip.stride;
-          std::size_t start = ip.origin;
-          std::size_t end = ip.origin + ip.block_len;
-          for (std::size_t b = 1; b < nb; ++b) {
-            std::size_t s = start + b * ip.stride;
-            if (s > end) {
-              merged_blocks.emplace_back(start, end - start, stride);
-              start = s;
-            }
-            end = s + ip.block_len;
-          }
-          merged_blocks.emplace_back(start, end - start, stride);
-        }
-
-        // when entire axis doesn't fit into the array, we might have to split
-        // blocks
-        if (!ip.fully_in_array
-            && (accessible_length
-                && ip.accessible_length().value() > ip.buffer_capacity)) {
-          std::size_t rem = ip.buffer_capacity;
-          std::vector<IndexBlock> ibs;
-          std::for_each(
-            std::begin(merged_blocks),
-            std::end(merged_blocks),
-            [&ip, &blocks, &rem, &ibs](IndexBlock& blk) {
-              while (blk.m_length > 0) {
-                std::size_t len = std::min(rem, blk.m_length);
-                ibs.emplace_back(blk.m_index, len);
-                blk = IndexBlock(blk.m_index + len, blk.m_length - len);
-                rem -= len;
-                if (rem == 0) {
-                  blocks.push_back(ibs);
-                  ibs.clear();
-                  rem = ip.buffer_capacity;
-                }
-              }
-            });
-          if (ibs.size() > 0)
-            blocks.push_back(ibs);
-        } else {
-          blocks.push_back(merged_blocks);
-        }
-      } else {
-        blocks.push_back(std::vector<IndexBlock>{ IndexBlock{ ip.origin, 1 } });
-      }
-      result->emplace_back(ip.axis, blocks);
-    });
-  return result;
+  return
+    std::make_tuple(std::move(result_dt), result_dt_extent);
 }
 
 const IterParams*

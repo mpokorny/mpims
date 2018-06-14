@@ -3,6 +3,7 @@
 
 #include <memory>
 
+#include <mpims.h>
 #include <IterParams.h>
 
 namespace mpims {
@@ -12,85 +13,153 @@ namespace mpims {
 class AxisIter {
 public:
 
-  AxisIter(std::shared_ptr<const IterParams> params_, bool outer_at_data_)
-    : params(params_)
-    , index(params_->origin)
-    , block(0)
-    , at_data((!params_->max_blocks || params_->max_blocks.value() > 0)
-              && outer_at_data_)
-    , outer_at_data(outer_at_data_)
-    , at_end(params_->max_blocks && params_->max_blocks.value() == 0) {
-  }
+  AxisIter(
+    const std::shared_ptr<const IterParams>& params,
+    bool outer_at_data)
+    : m_params(params) {
 
-  bool
-  operator==(const AxisIter& rhs) const {
-    return *params == *rhs.params && index == rhs.index && block == rhs.block
-      && at_data == rhs.at_data && outer_at_data == rhs.outer_at_data
-      && at_end == rhs.at_end;
-  }
-
-  bool
-  operator!=(const AxisIter& rhs) const {
-    return !(operator==(rhs));
-  }
-
-  std::shared_ptr<const IterParams> params;
-  std::size_t index;
-  std::size_t block;
-  bool at_data;
-  bool outer_at_data;
-  bool at_end;
-
-  void
-  increment(std::size_t n=1) {
-    while (n > 0 && !at_end) {
-      block = index / params->stride;
-      auto block_origin = params->origin + block * params->stride;
-      bool terminal_block =
-        (params->max_blocks
-         ? (block == params->max_blocks.value() - 1)
-         : false);
-      auto block_len =
-        (terminal_block ? params->terminal_block_len : params->block_len);
-      ++index;
-      if (!terminal_block && index - block_origin >= block_len) {
-        ++block;
-        index = params->origin + block * params->stride;
-        block_origin = index;
-        terminal_block = (
-          params->max_blocks
-          ? (block == params->max_blocks.value() - 1)
-          : false);
-        block_len =
-          (terminal_block ? params->terminal_block_len : params->block_len);
-      }
-      at_data = outer_at_data && (index - block_origin < block_len);
-      at_end =
-        terminal_block
-        && (index - block_origin == params->max_terminal_block_len);
-      --n;
-    }
-  }
-
-  std::optional<std::size_t>
-  num_remaining() const {
-    if (at_end || !at_data)
-      return 0;
-    auto accessible_length = params->accessible_length();
-    if (accessible_length) {
-      auto block_origin = params->origin + block * params->stride;
-      return (accessible_length.value()
-              - (block * params->block_len + index - block_origin));
+    auto max_size = m_params->max_size();
+    m_at_data = (!max_size || max_size.value() > 0) && outer_at_data;
+    if (m_params->fully_in_array){
+      m_take_n = m_params->size().value();
+      m_at_buffer = false;
+    } else if (m_params->buffer_capacity > 0) {
+      m_take_n = m_params->buffer_capacity;
+      m_at_buffer = true;
     } else {
-      return std::nullopt;
+      m_take_n = 1;
+      m_at_buffer = false;
     }
+    m_iter = m_params->begin();
+    m_blocks = m_iter->take_blocked(m_take_n);
+    m_index = 0;
+  }
+
+  AxisIter(const AxisIter& other)
+    : m_params(other.m_params)
+    , m_iter(m_params->begin())
+    , m_take_n(other.m_take_n)
+    , m_at_data(other.m_at_data)
+    , m_at_buffer(other.m_at_buffer) {
+
+    if (!other.at_end()) {
+      m_blocks = m_iter->take_blocked(m_take_n);
+      m_index = 0;
+      while (m_index < other.m_index)
+        take();
+    } else {
+      m_index = other.m_index;
+    }
+  }
+
+  AxisIter(AxisIter&& other)
+    : m_params(std::move(other).m_params)
+    , m_iter(std::move(other).m_iter)
+    , m_blocks(std::move(other).m_blocks)
+    , m_take_n(other.m_take_n)
+    , m_at_data(other.m_at_data)
+    , m_at_buffer(other.m_at_buffer)
+    , m_index(other.m_index) {
+  }
+
+  AxisIter&
+  operator=(const AxisIter& rhs) {
+    if (this != &rhs) {
+      AxisIter temp(rhs);
+      swap(temp);
+    }
+    return *this;
+  }
+
+  AxisIter&
+  operator=(AxisIter&& rhs) {
+    m_params = std::move(rhs).m_params;
+    m_iter = std::move(rhs).m_iter;
+    m_blocks = std::move(rhs).m_blocks;
+    m_take_n = rhs.m_take_n;
+    m_at_data = rhs.m_at_data;
+    m_at_buffer = rhs.m_at_buffer;
+    m_index = rhs.m_index;
+    return *this;
+  }
+
+  std::vector<finite_block_t>
+  take() {
+    auto blocks = m_blocks;
+    m_blocks = m_iter->take_blocked(m_take_n);
+    ++m_index;
+    if (m_at_data)
+      return blocks;
+    else
+      return std::vector<finite_block_t>();
+  }
+
+  const std::vector<finite_block_t>&
+  next_blocks() const {
+    return m_blocks;
   }
 
   void
   complete() {
-    at_data = false;
-    at_end = true;
+    while (m_blocks.size() > 0) {
+      m_blocks = m_iter->take_blocked(m_take_n);
+      ++m_index;
+    }
   }
+
+  bool
+  at_data() const {
+    return m_at_data;
+  }
+
+  bool
+  at_end() const {
+    return m_blocks.size() == 0;
+  }
+
+  MSColumns
+  axis() const {
+    return m_params->axis;
+  }
+
+  bool
+  at_buffer() const {
+    return m_at_buffer;
+  }
+
+  bool
+  operator==(const AxisIter& rhs) const {
+    return *m_params == *rhs.m_params && m_index == rhs.m_index;
+  }
+
+  bool
+  operator!=(const AxisIter& rhs) const {
+    return !operator==(rhs);
+  }
+
+protected:
+
+  void
+  swap(AxisIter& other) {
+    using std::swap;
+    swap(m_params, other.m_params);
+    swap(m_iter, other.m_iter);
+    swap(m_blocks, other.m_blocks);
+    swap(m_take_n, other.m_take_n);
+    swap(m_at_data, other.m_at_data);
+    swap(m_at_buffer, other.m_at_buffer);
+    swap(m_index, other.m_index);
+  }
+
+private:
+
+  std::shared_ptr<const IterParams> m_params;
+  std::unique_ptr<DataDistribution::Iterator> m_iter;
+  std::vector<finite_block_t> m_blocks;
+  std::size_t m_take_n;
+  bool m_at_data;
+  bool m_at_buffer;
+  std::size_t m_index;
 };
 
 }

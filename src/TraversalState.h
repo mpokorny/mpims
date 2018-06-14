@@ -30,73 +30,41 @@ struct TraversalState {
   }
 
   TraversalState(
-    const std::shared_ptr<const std::vector<IterParams> >& iter_params_,
+    const std::shared_ptr<const std::vector<IterParams> >& iter_params,
     MSColumns outer_ms_axis,
     std::size_t outer_ms_length,
-    bool in_tail_,
     MSColumns outer_full_array_axis_,
-    const std::shared_ptr<const MPI_Datatype>& full_buffer_datatype,
-    unsigned full_buffer_dt_count,
-    const std::shared_ptr<const MPI_Datatype>& tail_buffer_datatype,
-    unsigned tail_buffer_dt_count,
-    const std::shared_ptr<const MPI_Datatype>& full_fileview_datatype,
-    const std::shared_ptr<const MPI_Datatype>& tail_fileview_datatype)
-  : iter_params(iter_params_)
-  , block_maps(ReaderBase::make_index_block_sequences(iter_params_))
-  , count(0)
-  , max_count(0)
-  , in_tail(in_tail_)
+    const std::function<
+      const std::tuple<std::shared_ptr<const MPI_Datatype>, unsigned>&(
+        const std::size_t&)>& buffer_datatypes,
+    const std::function<
+      const std::shared_ptr<const MPI_Datatype>&(
+        const std::vector<finite_block_t>&) >& fileview_datatypes)
+  : m_iter_params(iter_params)
   , outer_full_array_axis(outer_full_array_axis_)
-  , m_full_buffer_datatype(full_buffer_datatype)
-  , m_full_buffer_dt_count(full_buffer_dt_count)
-  , m_tail_buffer_datatype(tail_buffer_datatype)
-  , m_tail_buffer_dt_count(tail_buffer_dt_count)
-  , m_full_fileview_datatype(full_fileview_datatype)
-  , m_tail_fileview_datatype(tail_fileview_datatype) {
+  , m_buffer_datatypes(buffer_datatypes)
+  , m_fileview_datatypes(fileview_datatypes) {
 
     global_eof = false;
-    const IterParams* init_params = &(*iter_params)[0];
-    axis_iters.emplace_back(
-      std::shared_ptr<const IterParams>(iter_params, init_params),
-      !init_params->max_blocks || init_params->max_blocks > 0);
-    std::for_each(
-      std::begin(*iter_params),
-      std::end(*iter_params),
-      [this](const IterParams& ip) {
-        data_index[ip.axis] = ip.origin;
-      });
-
-    if (axis_iters.front().params->axis == outer_ms_axis) {
-      eof_axis_iters.push_back(axis_iters.front());
-      auto& eai = eof_axis_iters.front();
-      max_count = std::max(eai.params->buffer_capacity, 1uL);
-      while (!eai.at_end && eai.index < outer_ms_length)
-        eai.increment();
-    }
+    axis_iters.emplace_back(this->iter_params(0), true);
+    if (axis_iters.front().axis() == outer_ms_axis)
+      initial_outer_length = outer_ms_length;
     cont = true;
   }
 
-  //EOF condition flag
+  //EOF condition
   bool
   eof() const {
     if (axis_iters.empty() || global_eof)
       return true;
-    if (eof_axis_iters.empty())
-      return false;
-    auto ai = std::rbegin(axis_iters);
-    auto ai_end = std::rend(axis_iters);
-    auto eai = std::rbegin(eof_axis_iters);
-    auto eai_end = std::rend(eof_axis_iters);
-    bool result = false;
-    auto num_undefined = axis_iters.size() - eof_axis_iters.size();
-    while (num_undefined-- > 0 && ai != ai_end)
-      ++ai;
-    while (!result && ai != ai_end && eai != eai_end) {
-      result = ai->index >= eai->index;
-      ++ai;
-      ++eai;
-    }
-    return result;
+    return
+      map(
+        initial_outer_length,
+        [&](auto iol) {
+          auto next_blocks = axis_iters.front().next_blocks();
+          return (next_blocks.size() == 0
+                  || std::get<0>(next_blocks[0]) >= iol); 
+        }).value_or(false);
   };
 
   bool
@@ -109,57 +77,90 @@ struct TraversalState {
 
   bool global_eof;
 
-  std::shared_ptr<const std::vector<IterParams> > iter_params;
+  std::shared_ptr<const std::vector<IterParams> > m_iter_params;
 
-  std::shared_ptr<
-    const std::vector<IndexBlockSequenceMap<MSColumns> > > block_maps;
+  std::unordered_map<MSColumns, std::vector<finite_block_t> > data_blocks;
 
-  ArrayIndexer<MSColumns>::index data_index;
+  bool
+  at_data() const {
+    return
+      std::all_of(
+        std::begin(data_blocks),
+        std::end(data_blocks),
+        [](auto& cblk) {
+          return std::get<1>(cblk).size() > 0;
+        });
+  }
 
   // stack of AxisIters to maintain axis iteration indexes
   std::deque<AxisIter> axis_iters;
 
-  std::deque<AxisIter> eof_axis_iters;
-
-  int count;
-
-  int max_count;
-
-  // Is traversal currently in a tail fileview? A tail fileview differs
-  // somewhat from a non-tail fileview when the iteration at the outermost
-  // fileview axis doesn't fit into the same pattern at the end of the axis as
-  // all the previous fileviews. This can happen when the distribution of data
-  // on an axis to processes is uneven at the end of an axis.
-  bool in_tail;
-
   // the outermost axis at which data can fully fit into a buffer
   MSColumns outer_full_array_axis;
 
-  std::tuple<std::shared_ptr<const MPI_Datatype>, unsigned>
-  buffer_datatype() const {
-    if (in_tail)
-      return std::make_tuple(m_tail_buffer_datatype, m_tail_buffer_dt_count);
-    else
-      return std::make_tuple(m_full_buffer_datatype, m_full_buffer_dt_count);
+  std::optional<std::size_t> initial_outer_length;
+
+  std::shared_ptr<const IterParams>
+  iter_params(std::size_t i) {
+    return
+      std::shared_ptr<const IterParams>(m_iter_params, &(*m_iter_params)[i]);
   }
 
-  std::shared_ptr<const MPI_Datatype>
-  fileview_datatype() const {
-    return (in_tail ? m_tail_fileview_datatype : m_full_fileview_datatype);
+  const std::tuple<std::shared_ptr<const MPI_Datatype>, unsigned>&
+  buffer_datatype() const {
+    // find data_blocks at buffer axis
+    const std::vector<finite_block_t>* blks = nullptr;
+    for (std::size_t i = 0; i < axis_iters.size() && !blks; ++i) {
+      if (axis_iters[i].at_buffer())
+        blks = &data_blocks.at(axis_iters[i].axis());
+    }
+    assert(blks);
+
+    // get buffer datatype, based on number of elements in blocks
+    std::size_t count = 0;
+    std::for_each(
+      std::begin(*blks),
+      std::end(*blks),
+      [&count](auto& blk) {
+        count += std::get<1>(blk);
+      });
+    return m_buffer_datatypes(count);
+  }
+
+  const std::shared_ptr<const MPI_Datatype>&
+  fileview_datatype(
+    const std::shared_ptr<const std::optional<MSColumns> >& fileview_axis) const {
+    // find data_blocks at fileview axis
+    std::vector<finite_block_t> blks;
+    if (*fileview_axis) {
+      const std::vector<finite_block_t>* blks_p = nullptr;
+      for (std::size_t i = 0; i < axis_iters.size() && !blks_p; ++i) {
+        if (axis_iters[i].axis() == fileview_axis->value())
+          blks_p = &data_blocks.at(axis_iters[i].axis());
+      }
+      assert(blks_p);
+
+      std::size_t origin = std::get<0>((*blks_p)[0]);
+      std::transform(
+        std::begin(*blks_p),
+        std::end(*blks_p),
+        std::back_inserter(blks),
+        [&origin](auto& blk) {
+          std::size_t b0, blen;
+          std::tie(b0, blen) = blk;
+          assert(b0 >= origin);
+          return std::make_tuple(b0 - origin, blen);
+        });
+    } 
+    return m_fileview_datatypes(blks); 
   }
 
   bool
   operator==(const TraversalState& other) const {
     return (
       cont == other.cont
-      && count == other.count
-      && (block_maps == other.block_maps || *block_maps == *other.block_maps)
-      && data_index == other.data_index
+      && data_blocks == other.data_blocks
       && axis_iters == other.axis_iters
-      && eof_axis_iters == other.eof_axis_iters
-      && in_tail == other.in_tail
-      && m_tail_buffer_dt_count == other.m_tail_buffer_dt_count
-      && m_full_buffer_dt_count == other.m_full_buffer_dt_count
       // comparing array datatypes and fileview datatypes would be ideal, but
       // that could be a relatively expensive task, as it requires digging
       // into the contents of the datatypes; instead, since those datatypes
@@ -175,21 +176,22 @@ struct TraversalState {
   }
 
   std::vector<IndexBlockSequence<MSColumns> >
-  blocks(int cnt) const {
+  blocks() const {
     std::vector<IndexBlockSequence<MSColumns> > result;
-    if (cnt > 0) {
-      for (std::size_t i = 0; i < iter_params->size(); ++i) {
-        auto& ip = (*iter_params)[i];
-        if (!ip.fully_in_array && ip.buffer_capacity == 0) {
-          result.emplace_back(
-            ip.axis,
-            std::vector{ IndexBlock(data_index.at(ip.axis), 1) });
-        } else {
-          auto& map = (*block_maps)[i];
-          auto ibs = map[data_index.at(ip.axis)];
-          ibs.trim();
-          result.push_back(ibs);
-        }
+    if (at_data()) {
+      for (std::size_t i = 0; i < m_iter_params->size(); ++i) {
+        auto& ip = (*m_iter_params)[i];
+        std::vector<IndexBlock> ibs;
+        std::transform(
+          std::begin(data_blocks.at(ip.axis)),
+          std::end(data_blocks.at(ip.axis)),
+          std::back_inserter(ibs),
+          [&](auto& blk) {
+            std::size_t b0, blen;
+            std::tie(b0, blen) = blk;
+            return IndexBlock(b0, blen);
+          });
+        result.push_back(IndexBlockSequence(ip.axis, ibs));
       }
     }
     return result;
@@ -197,90 +199,63 @@ struct TraversalState {
 
   void
   advance_to_buffer_end() {
-    if (!axis_iters.empty()) {
-      AxisIter* axis_iter = &axis_iters.back();
-      axis_iter->increment(max_count);
-      data_index[axis_iter->params->axis] = axis_iter->index;
-      while (!axis_iters.empty() && axis_iter->at_end) {
-        data_index[axis_iter->params->axis] = axis_iter->params->origin;
-        axis_iters.pop_back();
-        if (!axis_iters.empty()) {
-          axis_iter = &axis_iters.back();
-          axis_iter->increment();
-          data_index[axis_iter->params->axis] = axis_iter->index;
-        }
-      }}
+    while (!axis_iters.empty() && axis_iters.back().at_end()) 
+      axis_iters.pop_back(); 
   }
 
   template <typename F>
   void
   advance_to_next_buffer(
-    std::shared_ptr<const std::optional<MSColumns> > inner_fileview_axis,
+    const std::shared_ptr<const std::optional<MSColumns> >& inner_fileview_axis,
     F at_fileview_axis) {
 
-    count = 0;
-    max_count = 0;
     while (!axis_iters.empty()) {
       AxisIter& axis_iter = axis_iters.back();
-      MSColumns axis = axis_iter.params->axis;
-      if (!axis_iter.at_end) {
+      MSColumns axis = axis_iter.axis();
+      if (!axis_iter.at_end()) {
+        bool at_data = axis_iter.at_data();
+        data_blocks[axis] = axis_iter.take();
         auto depth = axis_iters.size();
-        data_index[axis] = axis_iter.index;
-        if (axis_iter.params->buffer_capacity > 0) {
-          max_count = static_cast<int>(axis_iter.params->buffer_capacity);
-          auto nr = axis_iter.num_remaining();
-          if (nr && (nr.value() < static_cast<std::size_t>(max_count))) {
-            count = nr.value();
-            in_tail = true;
-          } else {
-            count = max_count;
-            in_tail = false;
+        if (axis_iter.at_buffer()) {
+          // fill all lower level data_blocks values
+          for (std::size_t i = depth; i < m_iter_params->size(); ++i) {
+            AxisIter ai = AxisIter(iter_params(i), at_data);
+            at_data = ai.at_data();
+            data_blocks[ai.axis()] = ai.take(); 
           }
-        } else {
-          in_tail = false;
         }
         if (*inner_fileview_axis && axis == inner_fileview_axis->value())
           at_fileview_axis(axis);
-        if (axis_iter.params->buffer_capacity > 0)
+        if (axis_iter.at_buffer())
           return;
-        const IterParams* next_params = &(*iter_params)[depth];
-        axis_iters.emplace_back(
-          std::shared_ptr<const IterParams>(iter_params, next_params),
-          axis_iter.at_data);
+        axis_iters.emplace_back(iter_params(depth), at_data);
       } else {
-        data_index[axis] = axis_iter.params->origin;
-        axis_iters.pop_back();
-        if (!axis_iters.empty())
-          axis_iters.back().increment();
+        axis_iters.pop_back(); 
       }
     }
   }
 
 private:
 
-  std::shared_ptr<const MPI_Datatype> m_full_buffer_datatype;
+  std::function<
+    const std::tuple<std::shared_ptr<const MPI_Datatype>, unsigned>&(
+      const std::size_t&)> m_buffer_datatypes;
 
-  unsigned m_full_buffer_dt_count;
+  std::function<
+    const std::shared_ptr<const MPI_Datatype>&(
+      const std::vector<finite_block_t>&)> m_fileview_datatypes;
 
-  std::shared_ptr<const MPI_Datatype> m_tail_buffer_datatype;
-
-  unsigned m_tail_buffer_dt_count;
-
-  std::shared_ptr<const MPI_Datatype> m_full_fileview_datatype;
-
-  std::shared_ptr<const MPI_Datatype> m_tail_fileview_datatype;
-
-  std::ostringstream
-  show_iters(const std::deque<AxisIter>& iters) const {
-    std::ostringstream result;
-    std::for_each(
-      std::begin(iters),
-      std::end(iters),
-      [&result](const auto& ai) {
-        result << mscol_nickname(ai.params->axis) << ":" << ai.index << ";";
-      });
-    return result;
-  }
+  // std::ostringstream
+  // show_iters(const std::deque<AxisIter>& iters) const {
+  //   std::ostringstream result;
+  //   std::for_each(
+  //     std::begin(iters),
+  //     std::end(iters),
+  //     [&result](const auto& ai) {
+  //       result << mscol_nickname(ai.params->axis) << ":" << ai.index << ";";
+  //     });
+  //   return result;
+  // }
 };
 
 } // end namespace mpims

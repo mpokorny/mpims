@@ -283,14 +283,14 @@ main(int argc, char* argv[]) {
     npol * nch * sizeof(complex<float>)
   };
 
-  // unordered_map<MSColumns, DataDistribution> pgrid;
+  unordered_map<MSColumns, std::shared_ptr<const DataDistribution> > pgrid;
 
-  unordered_map<MSColumns, DataDistribution> pgrid = {
-    {MSColumns::spectral_window, DataDistribution { 2, 1 } },
-    {MSColumns::channel, DataDistribution { 2, 3 } }
-  };
+  // unordered_map<MSColumns, std::shared_ptr<const DataDistribution> > pgrid = {
+  //   {MSColumns::spectral_window, DataDistributionFactory::cyclic(1, 2) },
+  //   {MSColumns::channel, DataDistributionFactory::cyclic(3, 2) }
+  // };
 
-  unordered_map<MSColumns, DataDistribution> read_pgrid;
+  unordered_map<MSColumns, std::shared_ptr<const DataDistribution> > read_pgrid;
 
   int my_rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
@@ -320,9 +320,8 @@ main(int argc, char* argv[]) {
           ms_shape[0] =
             ColumnAxisBase<MSColumns>(static_cast<unsigned>(ms_top));
           if (pgrid.count(ms_top) > 0) {
-            auto stride =
-              pgrid[ms_top].num_processes * pgrid[ms_top].block_size;
-            dims[ms_top] = ((dims[ms_top] + (stride - 1)) / stride) * stride; 
+            auto period = pgrid[ms_top]->period().value();
+            dims[ms_top] = ceil(dims[ms_top], period) * period; 
           }
         } else {
           amode = AMode::ReadWrite;

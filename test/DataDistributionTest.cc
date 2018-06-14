@@ -39,13 +39,13 @@ TEST(DataDistribution, AllBlocks) {
   auto dd =
     DataDistributionFactory::cyclic(block_size, group_size, axis_length);
   for (std::size_t rank = 0; rank < dd->order(); ++rank) {
-    std::vector<block_t> blks;
+    std::vector<finite_block_t> blks;
     std::size_t size = 0;
     for (std::size_t i = rank * block_size;
          i < axis_length;
          i += block_size * group_size) {
       auto sz = std::min(i + block_size, axis_length) - i;
-      blks.push_back(block_t(i, sz));
+      blks.push_back(finite_block_t(i, sz));
       size += sz;
     }
     EXPECT_EQ(dd->blocks(rank), blks);

@@ -273,12 +273,12 @@ main(int argc, char* argv[]) {
         MSColumns::time, MSColumns::baseline, MSColumns::channel}
   };
 
-  // unordered_map<MSColumns, DataDistribution> pgrid;
+  unordered_map<MSColumns, std::shared_ptr<const DataDistribution> > pgrid;
 
-  unordered_map<MSColumns, DataDistribution> pgrid = {
-    {MSColumns::spectral_window, DataDistribution { 2, 1 } },
-    {MSColumns::channel, DataDistribution { 2, 3 } }
-  };
+  // unordered_map<MSColumns, std::shared_ptr<const DataDistribution> > pgrid = {
+  //   {MSColumns::spectral_window, DataDistributionFactory::cyclic(1, 2) },
+  //   {MSColumns::channel, DataDistributionFactory::cyclic(3, 2) }
+  // };
 
   int my_rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);

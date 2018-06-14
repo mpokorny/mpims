@@ -230,7 +230,9 @@ public:
     MPI_Info info,
     const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
     const std::vector<MSColumns>& traversal_order,
-    std::unordered_map<MSColumns, DataDistribution>& pgrid,
+    const std::unordered_map<
+      MSColumns,
+      std::shared_ptr<const DataDistribution> >& pgrid,
     std::size_t max_buffer_size,
     bool debug_log = false) {
 
