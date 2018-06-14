@@ -120,6 +120,20 @@ public:
       auto seq = take_all();
       return mpims::blocks(std::begin(seq), std::end(seq));
     }
+
+    template <typename F>
+    std::vector<size_t>
+    take_while(F p) {
+      std::vector<std::size_t> result;
+      while (!at_end()) {
+        auto i = operator*();
+        if (p(i))
+          result.push_back(i);
+        else
+          break;
+      }
+      return result;
+    }
   };
 
   virtual ~DataDistribution() {}
