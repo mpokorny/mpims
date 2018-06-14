@@ -2,6 +2,7 @@
 #define MPIMS_H_
 
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <type_traits>
 
@@ -71,6 +72,15 @@ template <
 T
 ceil(T num, T denom) {
   return (num + (denom - 1)) / denom;
+}
+
+template <typename A, typename F>
+constexpr std::optional<std::invoke_result_t<F, A> >
+map(const std::optional<A>& oa, F fn) {
+  if (oa)
+    return fn(oa.value());
+  else
+    return std::nullopt;
 }
 
 
