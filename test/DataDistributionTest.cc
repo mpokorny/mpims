@@ -205,6 +205,44 @@ TEST(DataDistribution, IteratorTakeBlocked) {
   }
 }
 
+TEST(DataDistribution, Periods) {
+
+  const std::size_t block_size = 3, group_size = 2;
+  auto cy =
+    DataDistributionFactory::cyclic(block_size, group_size, 2);
+  EXPECT_EQ(cy->period(), block_size * group_size);
+
+  auto up = DataDistributionFactory::unpartitioned();
+  EXPECT_EQ(up->period(), 1);
+  up = DataDistributionFactory::unpartitioned(83);
+  EXPECT_EQ(up->period(), 1);
+
+  const std::vector<std::vector<block_t> > all_blocks0{
+    std::vector{block_t(0, 2), block_t(5, 3), block_t(12, 1)},
+      std::vector{block_t(2, 2), block_t(8, 3), block_t(13, 1)}};
+  auto bs = DataDistributionFactory::block_sequence(all_blocks0, 1);
+  EXPECT_FALSE(bs->period());
+
+  const std::vector<std::vector<block_t> > all_blocks1{
+    std::vector{block_t(0, 2), block_t(5, 3), block_t(12, 1), block_t(18, 0)},
+      std::vector{block_t(2, 2), block_t(8, 3), block_t(13, 1), block_t(18, 0)}};
+  bs = DataDistributionFactory::block_sequence(all_blocks1, 1);
+  EXPECT_EQ(bs->period(), 18);
+
+  const std::vector<std::vector<block_t> > all_blocks2{
+    std::vector{block_t(0, 2), block_t(5, 3), block_t(12, 1), block_t(18, 0)},
+      std::vector{block_t(2, 2), block_t(8, 3), block_t(13, 1)}};
+  bs = DataDistributionFactory::block_sequence(all_blocks2, 1);
+  EXPECT_FALSE(bs->period());
+
+  const std::vector<std::vector<block_t> > all_blocks3{
+    std::vector{block_t(0, 2), block_t(5, 3), block_t(12, 1), block_t(18, 0)},
+      std::vector{block_t(2, 2), block_t(8, 3), block_t(13, 1), block_t(14, 0)},
+        std::vector{block_t(2, 2), block_t(9, 0)}};
+  bs = DataDistributionFactory::block_sequence(all_blocks3, 1);
+  EXPECT_EQ(bs->period(), std::lcm(std::lcm(18, 14), 9));
+}
+
 int
 main(int argc, char *argv[]) {
 

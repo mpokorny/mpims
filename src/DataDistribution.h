@@ -154,6 +154,11 @@ public:
     return result;
   }
 
+  std::optional<std::size_t>
+  period() const {
+    return m_period;
+  }
+
   std::string
   show() const {
     std::ostringstream result;
@@ -187,6 +192,8 @@ public:
 protected:
 
   std::size_t m_order;
+
+  std::optional<std::size_t> m_period;
 };
 
 // GeneratorDataDistribution
@@ -220,11 +227,13 @@ public:
   make(
     const generator_t& generator,
     const initializer_t& initializer,
+    const std::optional<std::size_t>& period,
     std::size_t order,
     bool unbounded) {
     return std::make_shared<GeneratorDataDistribution>(
       generator,
       initializer,
+      period,
       order,
       unbounded);
   }
@@ -242,6 +251,7 @@ public:
   operator=(GeneratorDataDistribution&& other) {
     m_generator = std::move(other).m_generator;
     m_initializer = std::move(other).m_initializer;
+    m_period = std::move(other).m_period;
     m_order = std::move(other).m_order;
     m_unbounded = std::move(other).m_unbounded;
     return *this;
@@ -321,6 +331,7 @@ protected:
     using std::swap;
     swap(m_generator, other.m_generator);
     swap(m_initializer, other.m_initializer);
+    swap(m_period, other.m_period);
     swap(m_order, other.m_order);
     swap(m_unbounded, other.m_unbounded);
   }
@@ -332,6 +343,7 @@ public:
   GeneratorDataDistribution(
     const generator_t& generator,
     const initializer_t& initializer,
+    const std::optional<std::size_t>& period,
     std::size_t order,
     bool unbounded)
     : m_generator(generator)
@@ -339,6 +351,7 @@ public:
     , m_unbounded(unbounded) {
 
     m_order = order;
+    m_period = period;
   }
 
   GeneratorDataDistribution(const GeneratorDataDistribution& other)
@@ -347,6 +360,7 @@ public:
     , m_unbounded(other.m_unbounded) {
 
     m_order = other.m_order;
+    m_period = other.m_period;
   }
 
   GeneratorDataDistribution(GeneratorDataDistribution&& other)
@@ -355,6 +369,7 @@ public:
     , m_unbounded(std::move(other).m_unbounded) {
 
     m_order = std::move(other).m_order;
+    m_period = std::move(other).m_period;
   }
 
 private:
@@ -384,6 +399,7 @@ public:
       GeneratorDataDistribution<CyclicGenerator::State>::make(
         CyclicGenerator::apply,
         CyclicGenerator::initial_states(block_length, order, axis_length),
+        CyclicGenerator::period(block_length, order),
         order,
         !axis_length);
   }
@@ -407,6 +423,7 @@ public:
       GeneratorDataDistribution<BlockSequenceGenerator::State>::make(
         BlockSequenceGenerator::apply,
         BlockSequenceGenerator::initial_states(all_blocks, axis_length),
+        BlockSequenceGenerator::period(all_blocks),
         all_blocks.size(),
         BlockSequenceGenerator::is_unbounded(all_blocks, axis_length));
   }
@@ -417,6 +434,7 @@ public:
     return GeneratorDataDistribution<UnpartitionedGenerator::State>::make(
       UnpartitionedGenerator::apply,
       UnpartitionedGenerator::initial_states(axis_length),
+      1,
       1,
       !axis_length);
   }

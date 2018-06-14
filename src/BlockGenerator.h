@@ -4,6 +4,7 @@
 #include <cassert>
 #include <functional>
 #include <iterator>
+#include <numeric>
 #include <optional>
 #include <stdexcept>
 #include <tuple>
@@ -48,6 +49,11 @@ public:
           std::min(offset, axis_length.value_or(offset)),
           axis_length};
     };
+  }
+
+  static constexpr std::size_t
+  period(std::size_t block_length, std::size_t order) {
+    return block_length * order;
   }
 
   static std::tuple<State, std::optional<block_t> >
@@ -160,6 +166,34 @@ public:
       return
         State{std::vector<block_t>(std::begin(*blocks), brep), alen, 0, 0};
     };
+  }
+
+  static std::optional<std::size_t>
+  period(const std::vector<std::vector<block_t> >& all_blocks) {
+
+    std::vector<std::size_t > ps;
+    std::for_each(
+      std::begin(all_blocks),
+      std::end(all_blocks),
+      [&ps](auto& blks) {
+        auto brep =
+          std::find_if(
+            std::begin(blks),
+            std::end(blks),
+            [](auto& b) { return std::get<1>(b) == 0; });
+        if (brep != std::end(blks))
+          ps.push_back(std::get<0>(*brep));
+      });
+    if (ps.size() == all_blocks.size()) {
+      std::size_t result = 1;
+      std::for_each(
+        std::begin(ps),
+        std::end(ps),
+        [&result](auto& p) { result = std::lcm(result, p); });
+      return result;
+    } else {
+      return std::nullopt;
+    }
   }
 
   static std::tuple<State, std::optional<block_t> >
