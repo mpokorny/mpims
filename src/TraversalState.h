@@ -108,28 +108,34 @@ struct TraversalState {
 
   const std::tuple<std::shared_ptr<const MPI_Datatype>, unsigned>&
   buffer_datatype() const {
+    static std::tuple<std::shared_ptr<const MPI_Datatype>, unsigned>
+      zilch(datatype(), 0);
+
     // find data_blocks at buffer axis
     const std::vector<finite_block_t>* blks = nullptr;
     for (std::size_t i = 0; i < axis_iters.size() && !blks; ++i) {
       if (axis_iters[i].at_buffer())
         blks = &data_blocks.at(axis_iters[i].axis());
     }
-    assert(blks);
-
-    // get buffer datatype, based on number of elements in blocks
-    std::size_t count = 0;
-    std::for_each(
-      std::begin(*blks),
-      std::end(*blks),
-      [&count](auto& blk) {
-        count += std::get<1>(blk);
-      });
-    return m_buffer_datatypes(count);
+    if (blks) {
+      // get buffer datatype, based on number of elements in blocks
+      std::size_t count = 0;
+      std::for_each(
+        std::begin(*blks),
+        std::end(*blks),
+        [&count](auto& blk) {
+          count += std::get<1>(blk);
+        });
+      return m_buffer_datatypes(count);
+    } else {
+      return zilch;
+    }
   }
 
   const std::shared_ptr<const MPI_Datatype>&
   fileview_datatype(
-    const std::shared_ptr<const std::optional<MSColumns> >& fileview_axis) const {
+    const std::shared_ptr<const std::optional<MSColumns> >& fileview_axis)
+    const {
     // find data_blocks at fileview axis
     std::vector<finite_block_t> blks;
     if (*fileview_axis) {
