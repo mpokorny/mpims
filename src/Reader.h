@@ -19,10 +19,11 @@
 
 #include <ArrayIndexer.h>
 #include <ColumnAxis.h>
+#include <DataDistribution.h>
+#include <GridDistribution.h>
 #include <IndexBlock.h>
 #include <MSArray.h>
 #include <MSColumns.h>
-#include <DataDistribution.h>
 #include <MPIState.h>
 #include <TraversalState.h>
 #include <ReaderBase.h>
@@ -220,9 +221,7 @@ public:
     const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
     const std::vector<MSColumns>& traversal_order,
     bool ms_buffer_order,
-    const std::unordered_map<
-      MSColumns,
-      std::shared_ptr<const DataDistribution> >& pgrid,
+    const std::unordered_map<MSColumns, GridDistribution>& pgrid,
     std::size_t max_buffer_size,
     bool readahead,
     bool debug_log = false) {
@@ -419,9 +418,7 @@ protected:
     const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
     const std::vector<MSColumns>& traversal_order,
     bool ms_buffer_order,
-    const std::unordered_map<
-      MSColumns,
-      std::shared_ptr<const DataDistribution> >& pgrid,
+    const std::unordered_map<MSColumns, GridDistribution>& pgrid,
     std::size_t max_buffer_size,
     bool debug_log = false) {
   
@@ -486,9 +483,7 @@ protected:
     const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
     const std::vector<MSColumns>& traversal_order,
     bool ms_buffer_order,
-    const std::unordered_map<
-      MSColumns,
-      std::shared_ptr<const DataDistribution> >& pgrid,
+    const std::unordered_map<MSColumns, GridDistribution>& pgrid,
     std::size_t max_buffer_size,
     bool debug_log,
     int amode,
@@ -545,13 +540,31 @@ protected:
 
     buffer_size = (max_buffer_size / value_size) * value_size;
 
+    // complete process grid definition; convert GridDistribution values to
+    // DataDistribution values, and create unpartitioned data distributions
+    // wherever no explicit grid axis is given
+    std::unordered_map<
+      MSColumns,
+      std::shared_ptr<const DataDistribution> > full_pgrid;
+    std::for_each(
+      std::begin(ms_shape),
+      std::end(ms_shape),
+      [&](auto& ax) {
+        auto col = ax.id();
+        if (pgrid.count(col) > 0)
+          full_pgrid[col] = pgrid.at(col)(ax.length());
+        else
+          full_pgrid[col] = DataDistributionFactory::unpartitioned(ax.length());
+      });
+
     // compute process grid size
+
     std::size_t pgrid_size = 1;
     std::for_each(
       std::begin(traversal_order),
       std::end(traversal_order),
-      [&pgrid_size, &pgrid] (const MSColumns& col) {
-        pgrid_size *= pgrid.at(col)->order();
+      [&pgrid_size, &full_pgrid] (const MSColumns& col) {
+        pgrid_size *= full_pgrid.at(col)->order();
       });
     int comm_size;
     MPI_Comm_size(comm, &comm_size);
@@ -580,20 +593,6 @@ protected:
       std::make_shared<std::vector<IterParams> >(traversal_order.size());
     inner_fileview_axis = std::make_shared<std::optional<MSColumns> >();
     ms_indexer = ArrayIndexer<MSColumns>::of(ArrayOrder::row_major, ms_shape);
-
-    std::unordered_map<
-      MSColumns,
-      std::shared_ptr<const DataDistribution> > full_pgrid;
-    std::for_each(
-      std::begin(ms_shape),
-      std::end(ms_shape),
-      [&](auto& ax) {
-        auto col = ax.id();
-        full_pgrid[col] =
-          ((pgrid.count(col) > 0)
-           ? pgrid.at(col)
-           : DataDistributionFactory::unpartitioned());
-      });
 
     init_iterparams(ms_shape, traversal_order, full_pgrid, rank, iter_params);
 

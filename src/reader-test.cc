@@ -273,11 +273,11 @@ main(int argc, char* argv[]) {
         MSColumns::time, MSColumns::baseline, MSColumns::channel}
   };
 
-  unordered_map<MSColumns, std::shared_ptr<const DataDistribution> > pgrid;
+  unordered_map<MSColumns, GridDistribution> pgrid;
 
-  // unordered_map<MSColumns, std::shared_ptr<const DataDistribution> > pgrid = {
-  //   {MSColumns::spectral_window, DataDistributionFactory::cyclic(1, 2) },
-  //   {MSColumns::channel, DataDistributionFactory::cyclic(3, 2) }
+  // unordered_map<MSColumns, GridDistribution> pgrid = {
+  //   {MSColumns::spectral_window, GridDistributionFactory::cyclic(1, 2) },
+  //   {MSColumns::channel, GridDistributionFactory::cyclic(3, 2) }
   // };
 
   int my_rank;
@@ -320,7 +320,8 @@ main(int argc, char* argv[]) {
                 mso,
                 pgrid,
                 bs,
-                false);
+                false,
+                true);
 
             while (reader != CxFltReader::end()) {
               const CxFltMSArray& array = *reader;

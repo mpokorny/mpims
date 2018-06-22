@@ -20,7 +20,7 @@
 
 #include <mpims.h>
 #include <ColumnAxis.h>
-#include <DataDistribution.h>
+#include <GridDistribution.h>
 #include <MSColumns.h>
 #include <Writer.h>
 
@@ -148,16 +148,14 @@ parse_traversal(const char *token_sep, const std::string& traversal) {
   return result;
 }
 
-std::unordered_map<MSColumns, std::shared_ptr<const DataDistribution> >
+std::unordered_map<MSColumns, GridDistribution>
 parse_distribution(
   const char *token_sep,
   const char *spec_sep,
   const std::string& distribution) {
 
   auto tokens = colspec_tokens(token_sep, distribution);
-  std::unordered_map<
-    MSColumns,
-    std::shared_ptr<const DataDistribution> > result;
+  std::unordered_map<MSColumns, GridDistribution> result;
   std::for_each(
     std::begin(tokens),
     std::end(tokens),
@@ -170,7 +168,7 @@ parse_distribution(
         blk = 1;
         std::tie(col, np) = parse_colspec<1>(spec_sep, tok);
       }
-      result[col] = DataDistributionFactory::cyclic(blk, np);
+      result[col] = GridDistributionFactory::cyclic(blk, np);
     });
   return result;
 }
@@ -184,9 +182,7 @@ parse_options(
   std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
   bool& complex_valued,
   std::vector<MSColumns>& traversal_order,
-  std::unordered_map<
-    MSColumns,
-    std::shared_ptr<const DataDistribution> >& pgrid,
+  std::unordered_map<MSColumns, GridDistribution>& pgrid,
   std::tuple<std::size_t, bool>& buffer_size,
   std::string& ms_path,
   std::string& datarep,
@@ -416,9 +412,7 @@ write_all(
   bool handle_as_complex,
   std::vector<MSColumns>& traversal_order,
   std::optional<std::size_t> num_outer,
-  std::unordered_map<
-    MSColumns,
-    std::shared_ptr<const DataDistribution> >& pgrid,
+  std::unordered_map<MSColumns, GridDistribution>& pgrid,
   std::size_t buffer_size,
   std::string ms_path,
   std::string datarep,
@@ -542,9 +536,7 @@ main(int argc, char *argv[]) {
   std::vector<ColumnAxisBase<MSColumns> > ms_shape;
   bool complex_valued;
   std::vector<MSColumns> traversal_order;
-  std::unordered_map<
-    MSColumns,
-    std::shared_ptr<const DataDistribution> > pgrid;
+  std::unordered_map<MSColumns, GridDistribution> pgrid;
   std::tuple<std::size_t, bool> max_buffer_size;
   std::string ms_path;
   std::string datarep;

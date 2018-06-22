@@ -55,7 +55,7 @@ TEST(DataDistribution, AllBlocks) {
   EXPECT_EQ(dd->max_size(), max_size);
 
   // can't get all blocks of unbounded distribution
-  dd = DataDistributionFactory::unpartitioned();
+  dd = DataDistributionFactory::unpartitioned(std::nullopt);
   EXPECT_THROW(dd->blocks(0), std::domain_error);
   EXPECT_FALSE(dd->size(0));
 }
@@ -212,7 +212,7 @@ TEST(DataDistribution, Periods) {
     DataDistributionFactory::cyclic(block_size, group_size, 2);
   EXPECT_EQ(cy->period(), block_size * group_size);
 
-  auto up = DataDistributionFactory::unpartitioned();
+  auto up = DataDistributionFactory::unpartitioned(std::nullopt);
   EXPECT_EQ(up->period(), 1);
   up = DataDistributionFactory::unpartitioned(83);
   EXPECT_EQ(up->period(), 1);
