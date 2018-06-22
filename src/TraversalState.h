@@ -57,6 +57,8 @@ struct TraversalState {
   eof() const {
     if (axis_iters.empty() || global_eof)
       return true;
+    if (axis_iters.size() != 1)
+      return false;
     return
       map(
         initial_outer_length,
