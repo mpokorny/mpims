@@ -129,10 +129,12 @@ public:
       std::vector<std::size_t> result;
       while (!at_end()) {
         auto i = operator*();
-        if (p(i))
+        if (p(i)) {
           result.push_back(i);
-        else
+          operator++();
+        } else {
           break;
+        }
       }
       return result;
     }
