@@ -202,7 +202,7 @@ ReaderBase::finite_compound_datatype(
   std::ostringstream oss;
   if (debug_log) {
     oss << "(" << rank << ") "
-        << "finite_compund_datatype(de " << dt_extent
+        << "finite_compound_datatype(de " << dt_extent
         << ", b [";
     const char* sep = "";
     std::for_each(
