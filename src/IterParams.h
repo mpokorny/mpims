@@ -32,6 +32,7 @@ struct IterParams {
     , data_distribution(data_distribution_)
     , rank(rank_) {
 
+    full_fv_axis = false;
     fully_in_array = false;
     within_fileview = false;
     buffer_capacity = 0;
@@ -41,6 +42,7 @@ struct IterParams {
 
   MSColumns axis;
   std::optional<std::size_t> axis_length;
+  std::size_t full_fv_axis;
   // can a buffer hold the data for the full axis given iteration pattern?
   bool fully_in_array;
   // is iteration across this axis done without changing the fileview?

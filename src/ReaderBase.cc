@@ -187,6 +187,18 @@ ReaderBase::init_traversal_partitions(
       ip->within_fileview = !inner_fileview_axis->has_value();
       ++ip;
     }
+
+    // going in ms order set iter_params full_fv_axis to true starting at the
+    // first axis that is within the fileview
+    bool in_fv = false;
+    std::for_each(
+      std::begin(ms_shape),
+      std::end(ms_shape),
+      [&in_fv, &iter_params](auto& ax){
+        auto ip = find_iter_params(iter_params, ax.id());
+        in_fv = in_fv || ip->within_fileview;
+        ip->full_fv_axis = in_fv;
+      });
   }
 }
 

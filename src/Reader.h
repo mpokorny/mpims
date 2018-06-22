@@ -959,7 +959,7 @@ protected:
       // build datatype for fileview
       std::size_t dt_extent = value_extent;
       auto result = datatype(value_datatype);
-      
+
       std::for_each(
         ms_shape.crbegin(),
         ms_shape.crend(),
@@ -967,21 +967,15 @@ protected:
 
           auto ip = find_iter_params(iter_params, ax.id());
           std::vector<finite_block_t> blocks;
-          std::size_t len;
-          if (ip->within_fileview) {
+          if (ip->within_fileview)
             blocks = ip->begin()->take_all_blocked();
-            len = ip->axis_length.value();
-          } else if (ip->buffer_capacity > 0) {
+          else if (ip->buffer_capacity > 0)
             blocks = fv_blocks;
-            auto period = ip->period().value_or(1);
-            std::size_t b1, b1len;
-            std::tie(b1, b1len) = blocks[blocks.size() - 1];
-            len = ceil(b1 + b1len, period) * period;
-          } else {
+          else
             blocks.emplace_back(0, 1);
-            len = 1;
-          }
 
+          std::size_t len =
+            ip->full_fv_axis ? ip->axis_length.value() : 1;
           std::tie(result, dt_extent) =
             finite_compound_datatype(
               result,
