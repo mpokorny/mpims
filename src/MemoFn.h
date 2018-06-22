@@ -11,8 +11,7 @@ namespace mpims {
 
 template <
   typename A,
-  typename B,
-  typename Hash = std::hash<A> >
+  typename B>
 class MemoFn {
 
 public:
@@ -21,13 +20,14 @@ public:
     typename F,
     typename = typename std::enable_if<
       std::is_convertible<std::invoke_result_t<F, A>, B>::value>::type>
-  MemoFn(F&& f)
-    : m_f(std::forward<F>(f))
-    , m_cache(std::make_shared<std::unordered_map<A, B, Hash> >()) {
+  MemoFn(F f)
+    : m_f(f)
+    , m_mtx(std::make_shared<std::mutex>())
+    , m_cache(std::make_shared<std::unordered_map<A, B> >()) {
   }
 
   MemoFn(const MemoFn& f) {
-    std::lock_guard<std::mutex> lock(f.m_mtx);
+    std::lock_guard<std::mutex> lock(*f.m_mtx);
     m_f = f.m_f;
     m_mtx = f.m_mtx;
     m_cache = f.m_cache;
@@ -89,7 +89,7 @@ private:
 
   mutable std::shared_ptr<std::mutex> m_mtx;
 
-  mutable std::shared_ptr<std::unordered_map<A, B, Hash> > m_cache;
+  mutable std::shared_ptr<std::unordered_map<A, B> > m_cache;
   
 };
 
