@@ -87,9 +87,9 @@ struct ReaderBase {
     int rank,
     bool debug_log);
 
-  static const IterParams*
+  static IterParams*
   find_iter_params(
-    const std::shared_ptr<const std::vector<IterParams> >& iter_params,
+    const std::shared_ptr<std::vector<IterParams> >& iter_params,
     MSColumns col);
 };
 

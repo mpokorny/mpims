@@ -360,9 +360,9 @@ ReaderBase::finite_compound_datatype(
     std::make_tuple(std::move(result_dt), result_dt_extent);
 }
 
-const IterParams*
+IterParams*
 ReaderBase::find_iter_params(
-  const std::shared_ptr<const std::vector<IterParams> >& iter_params,
+  const std::shared_ptr<std::vector<IterParams> >& iter_params,
   MSColumns col) {
 
   auto ip =
