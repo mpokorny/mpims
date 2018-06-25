@@ -30,6 +30,7 @@ struct TraversalState {
   }
 
   TraversalState(
+    MPI_Comm comm,
     const std::shared_ptr<const std::vector<IterParams> >& iter_params,
     MSColumns outer_ms_axis,
     std::size_t outer_ms_length,
@@ -46,7 +47,18 @@ struct TraversalState {
   , m_fileview_datatypes(fileview_datatypes) {
 
     global_eof = false;
-    axis_iters.emplace_back(this->iter_params(0), true);
+    m_num_iterations = max_iterations(comm, m_iter_params);
+
+    // initialize data_blocks values
+    bool at_data = true;
+    for (std::size_t i = 0; i < m_iter_params->size(); ++i) {
+      AxisIter ai =
+        AxisIter(this->iter_params(i), m_num_iterations[i], at_data);
+      at_data = ai.at_data();
+      data_blocks[ai.axis()] = ai.take();
+    }
+
+    axis_iters.emplace_back(this->iter_params(0), m_num_iterations[0], true);
     if (axis_iters.front().axis() == outer_ms_axis)
       initial_outer_length = outer_ms_length;
     cont = true;
@@ -148,17 +160,19 @@ struct TraversalState {
       }
       assert(blks_p);
 
-      std::size_t origin = std::get<0>((*blks_p)[0]);
-      std::transform(
-        std::begin(*blks_p),
-        std::end(*blks_p),
-        std::back_inserter(blks),
-        [&origin](auto& blk) {
-          std::size_t b0, blen;
-          std::tie(b0, blen) = blk;
-          assert(b0 >= origin);
-          return std::make_tuple(b0 - origin, blen);
-        });
+      if (blks_p->size() > 0) {
+        std::size_t origin = std::get<0>((*blks_p)[0]);
+        std::transform(
+          std::begin(*blks_p),
+          std::end(*blks_p),
+          std::back_inserter(blks),
+          [&origin](auto& blk) {
+            std::size_t b0, blen;
+            std::tie(b0, blen) = blk;
+            assert(b0 >= origin);
+            return std::make_tuple(b0 - origin, blen);
+          });
+      }
     } 
     return m_fileview_datatypes(blks); 
   }
@@ -207,8 +221,8 @@ struct TraversalState {
 
   void
   advance_to_buffer_end() {
-    while (!axis_iters.empty() && axis_iters.back().at_end()) 
-      axis_iters.pop_back(); 
+    while (!axis_iters.empty() && axis_iters.back().at_end())
+      axis_iters.pop_back();
   }
 
   template <typename F>
@@ -227,16 +241,20 @@ struct TraversalState {
         if (axis_iter.at_buffer()) {
           // fill all lower level data_blocks values
           for (std::size_t i = depth; i < m_iter_params->size(); ++i) {
-            AxisIter ai = AxisIter(iter_params(i), at_data);
+            AxisIter ai =
+              AxisIter(iter_params(i), m_num_iterations[i], at_data);
             at_data = ai.at_data();
             data_blocks[ai.axis()] = ai.take(); 
           }
         }
         if (*inner_fileview_axis && axis == inner_fileview_axis->value())
-          at_fileview_axis(axis);
+          at_fileview_axis();
         if (axis_iter.at_buffer())
           return;
-        axis_iters.emplace_back(iter_params(depth), at_data);
+        axis_iters.emplace_back(
+          iter_params(depth),
+          m_num_iterations[depth],
+          at_data);
       } else {
         axis_iters.pop_back(); 
       }
@@ -252,6 +270,32 @@ private:
   std::function<
     const std::shared_ptr<const MPI_Datatype>&(
       const std::vector<finite_block_t>&)> m_fileview_datatypes;
+
+  std::vector<std::size_t> m_num_iterations;
+
+  static std::vector<std::size_t>
+  max_iterations(
+    MPI_Comm comm,
+    const std::shared_ptr<const std::vector<IterParams> >& iter_params) {
+
+    std::vector<std::size_t> result;
+    result.reserve(iter_params->size());
+    std::transform(
+      std::begin(*iter_params),
+      std::end(*iter_params),
+      std::back_inserter(result),
+      [](auto& ip) {
+        return ip.num_total_iterations();
+      });
+    MPI_Allreduce(
+      MPI_IN_PLACE,
+      result.data(),
+      result.size(),
+      MPIMS_SIZE_T,
+      MPI_MAX,
+      comm);
+    return result;
+  }
 
   // std::ostringstream
   // show_iters(const std::deque<AxisIter>& iters) const {

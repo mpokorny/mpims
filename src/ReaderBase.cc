@@ -85,7 +85,7 @@ ReaderBase::init_traversal_partitions(
       // buffer_capacity
       if (start_buffer != iter_params->rbegin()) {
         --start_buffer;
-        start_buffer->buffer_capacity = start_buffer->size().value();
+        start_buffer->buffer_capacity = start_buffer->max_size().value();
         start_buffer->fully_in_array = false;
         break;
       } else {
@@ -120,7 +120,7 @@ ReaderBase::init_traversal_partitions(
   // a false fully_in_array value)
   if (start_buffer == iter_params->rend()) {
     --start_buffer;
-    start_buffer->buffer_capacity = start_buffer->size().value();
+    start_buffer->buffer_capacity = start_buffer->max_size().value();
     start_buffer->fully_in_array = false;
   }
 

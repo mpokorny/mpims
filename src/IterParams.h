@@ -128,6 +128,24 @@ struct IterParams {
   operator!=(const IterParams& rhs) const {
     return !(operator==(rhs));
   }
+
+  std::size_t
+  num_total_iterations() const {
+    std::size_t result;
+    if (fully_in_array) {
+      result = 1;
+    } else if (buffer_capacity > 0) {
+      auto iter = begin();
+      result = 0;
+      while (!iter->at_end()) {
+        ++result;
+        iter->take_blocked(buffer_capacity);
+      }
+    } else {
+      result = size().value();
+    }
+    return result;
+  }
 };
 
 }

@@ -734,6 +734,7 @@ protected:
 
     traversal_state =
       TraversalState(
+        reduced_comm,
         iter_params,
         ms_shape[0].id(),
         ((reduced_comm != MPI_COMM_NULL)
@@ -967,12 +968,16 @@ protected:
 
           auto ip = find_iter_params(iter_params, ax.id());
           std::vector<finite_block_t> blocks;
-          if (ip->within_fileview)
+          if (ip->within_fileview) {
             blocks = ip->begin()->take_all_blocked();
-          else if (ip->buffer_capacity > 0)
-            blocks = fv_blocks;
-          else
+          } else if (ip->buffer_capacity > 0) {
+            if (fv_blocks.size() > 0)
+              blocks = fv_blocks;
+            else
+              blocks.emplace_back(0, ip->buffer_capacity);
+          } else {
             blocks.emplace_back(0, 1);
+          }
 
           std::size_t len =
             ip->full_fv_axis ? ip->axis_length.value() : 1;
@@ -1109,10 +1114,11 @@ protected:
       std::begin(*m_iter_params),
       std::end(*m_iter_params),
       [&data_index, &args](const auto& ip) {
-        if (ip.within_fileview)
+        auto blks = args.data_blocks.at(ip.axis);
+        if (ip.within_fileview || blks.size() == 0)
           data_index[ip.axis] = 0;
         else
-          data_index[ip.axis] = std::get<0>(args.data_blocks.at(ip.axis)[0]);
+          data_index[ip.axis] = std::get<0>(blks[0]);
       });
     std::size_t offset = m_ms_indexer->offset_of_(data_index).value();
 
@@ -1158,7 +1164,7 @@ protected:
 
     traversal_state.advance_to_next_buffer(
       m_inner_fileview_axis,
-      [this, &traversal_state, &file](MSColumns) {
+      [this, &traversal_state, &file]() {
 
         auto args = SetFileviewArgs {
           traversal_state.data_blocks,

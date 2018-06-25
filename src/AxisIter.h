@@ -15,12 +15,16 @@ public:
 
   AxisIter(
     const std::shared_ptr<const IterParams>& params,
+    std::size_t num_iterations,
     bool outer_at_data)
-    : m_params(params) {
+    : m_params(params)
+    , m_iter(m_params->begin())
+    , m_index(0)
+    , m_length(num_iterations) {
 
     auto max_size = m_params->max_size();
     m_at_data = (!max_size || max_size.value() > 0) && outer_at_data;
-    if (m_params->fully_in_array){
+    if (m_params->fully_in_array) {
       m_take_n = m_params->size().value();
       m_at_buffer = false;
     } else if (m_params->buffer_capacity > 0) {
@@ -30,9 +34,7 @@ public:
       m_take_n = 1;
       m_at_buffer = false;
     }
-    m_iter = m_params->begin();
     m_blocks = m_iter->take_blocked(m_take_n);
-    m_index = 0;
   }
 
   AxisIter(const AxisIter& other)
@@ -40,7 +42,8 @@ public:
     , m_iter(m_params->begin())
     , m_take_n(other.m_take_n)
     , m_at_data(other.m_at_data)
-    , m_at_buffer(other.m_at_buffer) {
+    , m_at_buffer(other.m_at_buffer)
+    , m_length(other.m_length) {
 
     if (!other.at_end()) {
       m_blocks = m_iter->take_blocked(m_take_n);
@@ -59,7 +62,8 @@ public:
     , m_take_n(other.m_take_n)
     , m_at_data(other.m_at_data)
     , m_at_buffer(other.m_at_buffer)
-    , m_index(other.m_index) {
+    , m_index(other.m_index)
+    , m_length(other.m_length) {
   }
 
   AxisIter&
@@ -80,6 +84,7 @@ public:
     m_at_data = rhs.m_at_data;
     m_at_buffer = rhs.m_at_buffer;
     m_index = rhs.m_index;
+    m_length = rhs.m_length;
     return *this;
   }
 
@@ -101,7 +106,7 @@ public:
 
   void
   complete() {
-    while (m_blocks.size() > 0) {
+    while (m_index < m_length) {
       m_blocks = m_iter->take_blocked(m_take_n);
       ++m_index;
     }
@@ -114,7 +119,7 @@ public:
 
   bool
   at_end() const {
-    return m_blocks.size() == 0;
+    return m_index >= m_length;
   }
 
   MSColumns
@@ -149,6 +154,7 @@ protected:
     swap(m_at_data, other.m_at_data);
     swap(m_at_buffer, other.m_at_buffer);
     swap(m_index, other.m_index);
+    swap(m_length, other.m_length);
   }
 
 private:
@@ -160,6 +166,7 @@ private:
   bool m_at_data;
   bool m_at_buffer;
   std::size_t m_index;
+  std::size_t m_length;
 };
 
 }
