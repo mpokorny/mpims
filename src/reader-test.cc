@@ -1,3 +1,4 @@
+#include <cmath>
 #include <complex>
 #include <fstream>
 #include <iostream>
@@ -63,10 +64,17 @@ decode_vis(
 }
 
 bool
+isnan(const complex<float>& x) {
+  return isnan(x.real()) || isnan(x.imag());
+}
+
+bool
 checkit(
   const complex<float>* buffer,
   size_t& n,
   vector<pair<MSColumns, size_t> >& coords,
+  complex<float>* full_array,
+  shared_ptr<ArrayIndexer<MSColumns> >& full_array_indexer,
   vector<IndexBlockSequence<MSColumns> >::const_iterator begin,
   vector<IndexBlockSequence<MSColumns> >::const_iterator end,
   ostringstream& output)
@@ -77,6 +85,8 @@ checkit(
   const complex<float>* buffer,
   size_t& n,
   vector<pair<MSColumns, size_t> >& coords,
+  complex<float>* full_array,
+  shared_ptr<ArrayIndexer<MSColumns> >& full_array_indexer,
   vector<IndexBlockSequence<MSColumns> >::const_iterator begin,
   vector<IndexBlockSequence<MSColumns> >::const_iterator end,
   ostringstream& output) {
@@ -88,7 +98,17 @@ checkit(
     for (auto& b : begin->m_blocks)
       for (size_t i = 0; i < b.m_length; ++i) {
         coords.emplace_back(begin->m_axis, b.m_index + i);
-        result = checkit(buffer, n, coords, next, end, output) && result;
+        result =
+          checkit(
+            buffer,
+            n,
+            coords,
+            full_array,
+            full_array_indexer,
+            next,
+            end,
+            output)
+          && result;
         coords.pop_back();
       }
   } else {
@@ -97,6 +117,9 @@ checkit(
         coords.emplace_back(begin->m_axis, b.m_index + i);
         unordered_map<MSColumns, size_t> coords_map(
           std::begin(coords), std::end(coords));
+        auto offset = full_array_indexer->offset_of_(coords_map);
+        if (offset)
+          full_array[offset.value()] = buffer[n];
         size_t tim, spw, bal, ch, pol;
         decode_vis(buffer[n++], tim, spw, bal, ch, pol);
         if (coords_map[MSColumns::time] != tim
@@ -133,7 +156,11 @@ checkit(
 }
 
 bool
-cb(const CxFltMSArray& array, ostringstream& output) {
+cb(
+  const CxFltMSArray& array,
+  complex<float>* full_array,
+  shared_ptr<ArrayIndexer<MSColumns> >& full_array_indexer,
+  ostringstream& output) {
 
   if (!array.buffer())
     return false;
@@ -157,12 +184,60 @@ cb(const CxFltMSArray& array, ostringstream& output) {
       array.buffer().value(),
       n,
       coords,
+      full_array,
+      full_array_indexer,
       begin(indexes),
       end(indexes),
       output);
   if (result)
     output << "no errors" << endl;
+
   return result;
+}
+
+void
+merge_full_arrays(
+  MPI_Win win,
+  int rank,
+  complex<float>* full_array,
+  std::size_t array_length) {
+
+  MPI_Group group;
+  MPI_Win_get_group(win, &group);
+  MPI_Group g0, grest;
+  int r0 = 0;
+  MPI_Group_incl(group, 1, &r0, &g0);
+  MPI_Group_excl(group, 1, &r0, &grest);
+  if (rank == 0) {
+    MPI_Win_post(grest, MPI_MODE_NOPUT, win);
+    MPI_Win_wait(win);
+  } else {
+    MPI_Win_start(g0, 0, win);
+    std::size_t i = 0;
+    while (i < array_length) {
+      int count = 0;
+      while (i < array_length && !isnan(full_array[i])) {
+        ++count;
+        ++i;
+      }
+      if (count > 0)
+        MPI_Put(
+          full_array + i - count,
+          count,
+          MPI_CXX_FLOAT_COMPLEX,
+          0,
+          i - count,
+          count,
+          MPI_CXX_FLOAT_COMPLEX,
+          win);
+      else
+        ++i;
+    }
+    MPI_Win_complete(win);
+  }
+  MPI_Group_free(&g0);
+  MPI_Group_free(&grest);
+  MPI_Group_free(&group);
 }
 
 void
@@ -252,8 +327,10 @@ main(int argc, char* argv[]) {
       ColumnAxis<MSColumns, MSColumns::polarization_product>(npol)
       };
 
-  size_t max_buffer_size =
-    ntim * nspw * nbal * nch * npol * sizeof(complex<float>);
+  size_t max_buffer_length =
+    ntim * nspw * nbal * nch * npol;
+
+  size_t max_buffer_size = max_buffer_length * sizeof(complex<float>);
 
   vector<size_t> buffer_sizes = {
     max_buffer_size,
@@ -273,17 +350,33 @@ main(int argc, char* argv[]) {
         MSColumns::time, MSColumns::baseline, MSColumns::channel}
   };
 
-  unordered_map<MSColumns, GridDistribution> pgrid;
+  // unordered_map<MSColumns, GridDistribution> pgrid;
 
-  // unordered_map<MSColumns, GridDistribution> pgrid = {
-  //   {MSColumns::spectral_window, GridDistributionFactory::cyclic(1, 2) },
-  //   {MSColumns::channel, GridDistributionFactory::cyclic(3, 2) }
-  // };
+  unordered_map<MSColumns, GridDistribution> pgrid = {
+    {MSColumns::spectral_window, GridDistributionFactory::cyclic(1, 2) },
+    {MSColumns::channel, GridDistributionFactory::cyclic(3, 2) }
+  };
 
   int my_rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
   int world_size;
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+  auto full_array_indexer =
+    ArrayIndexer<MSColumns>::of(ArrayOrder::row_major, ms_shape);
+  complex<float>* full_array;
+  MPI_Info info;
+  MPI_Info_create(&info);
+  MPI_Info_set(info, "same_size", "true");
+  MPI_Win full_array_win;
+  MPI_Win_allocate(
+    max_buffer_size,
+    sizeof(complex<float>),
+    info,
+    MPI_COMM_WORLD,
+    &full_array,
+    &full_array_win);
+  MPI_Info_free(&info);
 
   if (my_rank == 0)
     write_file(argv[1], ms_shape);
@@ -298,6 +391,10 @@ main(int argc, char* argv[]) {
           for (auto& mss : {ms_shape /*, ms_shape_u*/}) {
             if (mss[0].is_indeterminate() && to[0] !=  mss[0].id())
               continue;
+
+            for (std::size_t i = 0; i < max_buffer_length; ++i) 
+              full_array[i] = complex{NAN, NAN};
+
             ostringstream output;
             output << "========= traversal_order "
                    << colnames(to)
@@ -320,13 +417,12 @@ main(int argc, char* argv[]) {
                 mso,
                 pgrid,
                 bs,
-                false,
-                true);
+                false);
 
             while (reader != CxFltReader::end()) {
               const CxFltMSArray& array = *reader;
               if (array.buffer()) {
-                if (cb(array, output))
+                if (cb(array, full_array, full_array_indexer, output))
                   ++reader;
                 else
                   reader.interrupt();
@@ -334,6 +430,12 @@ main(int argc, char* argv[]) {
                 ++reader;
               }
             }
+
+            merge_full_arrays(
+              full_array_win,
+              my_rank,
+              full_array,
+              max_buffer_length);
 
             int output_rank = 0;
             while (output_rank < world_size) {
@@ -348,6 +450,19 @@ main(int argc, char* argv[]) {
               ++output_rank;
               MPI_Barrier(MPI_COMM_WORLD);
             }
+
+            if (my_rank == 0) {
+              std::size_t num_missing = 0;
+              for (std::size_t i = 0; i < max_buffer_length; ++i)
+                if (isnan(full_array[i]))
+                  ++num_missing;
+              cout << "++++++++ ";
+              if (num_missing == 0)
+                cout << "no";
+              else
+                cout << num_missing;
+              cout << " missing elements ++++++++" << endl;
+            }
           }
         }
       }
@@ -359,6 +474,7 @@ main(int argc, char* argv[]) {
       remove(argv[1]);
     throw;
   }
+  MPI_Win_free(&full_array_win);
   MPI_Finalize();
 
 return 0;
