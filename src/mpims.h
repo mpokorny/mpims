@@ -1,12 +1,28 @@
 #ifndef MPIMS_H_
 #define MPIMS_H_
 
+#include <climits>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <type_traits>
 
 #include <mpi.h>
+
+#if SIZE_MAX == UCHAR_MAX
+# define MPIMS_SIZE_T MPI_UNSIGNED_CHAR
+#elif SIZE_MAX == USHRT_MAX
+# define MPIMS_SIZE_T MPI_UNSIGNED_SHORT
+#elif SIZE_MAX == UINT_MAX
+# define MPIMS_SIZE_T MPI_UNSIGNED
+#elif SIZE_MAX == ULONG_MAX
+# define MPIMS_SIZE_T MPI_UNSIGNED_LONG
+#elif SIZE_MAX == ULLONG_MAX
+# define MPIMS_SIZE_T MPI_UNSIGNED_LONG_LONG
+#else
+# error "Unable to match size_t size with MPI datatype"
+#endif
 
 namespace mpims {
 
