@@ -180,32 +180,29 @@ struct TraversalState {
   }
 
   const std::shared_ptr<const MPI_Datatype>&
-  fileview_datatype(
-    const std::shared_ptr<const std::optional<MSColumns> >& fileview_axis)
+  fileview_datatype(MSColumns fileview_axis)
     const {
     // find data_blocks at fileview axis
     std::vector<finite_block_t> blks;
-    if (*fileview_axis) {
-      const std::vector<finite_block_t>* blks_p = nullptr;
-      for (std::size_t i = 0; i < axis_iters.size() && !blks_p; ++i) {
-        if (axis_iters[i].axis() == fileview_axis->value())
-          blks_p = &data_blocks.at(axis_iters[i].axis());
-      }
-      assert(blks_p);
+    const std::vector<finite_block_t>* blks_p = nullptr;
+    for (std::size_t i = 0; i < axis_iters.size() && !blks_p; ++i) {
+      if (axis_iters[i].axis() == fileview_axis)
+        blks_p = &data_blocks.at(axis_iters[i].axis());
+    }
+    assert(blks_p);
 
-      if (blks_p->size() > 0) {
-        std::size_t origin = std::get<0>((*blks_p)[0]);
-        std::transform(
-          std::begin(*blks_p),
-          std::end(*blks_p),
-          std::back_inserter(blks),
-          [&origin](auto& blk) {
-            std::size_t b0, blen;
-            std::tie(b0, blen) = blk;
-            assert(b0 >= origin);
-            return std::make_tuple(b0 - origin, blen);
-          });
-      }
+    if (blks_p->size() > 0) {
+      std::size_t origin = std::get<0>((*blks_p)[0]);
+      std::transform(
+        std::begin(*blks_p),
+        std::end(*blks_p),
+        std::back_inserter(blks),
+        [&origin](auto& blk) {
+          std::size_t b0, blen;
+          std::tie(b0, blen) = blk;
+          assert(b0 >= origin);
+          return std::make_tuple(b0 - origin, blen);
+        });
     }
     return m_fileview_datatypes(blks);
   }
@@ -260,9 +257,7 @@ struct TraversalState {
 
   template <typename F>
   void
-  advance_to_next_buffer(
-    const std::shared_ptr<const std::optional<MSColumns> >& inner_fileview_axis,
-    F at_fileview_axis) {
+  advance_to_next_buffer(MSColumns inner_fileview_axis, F at_fileview_axis) {
 
     while (!axis_iters.empty()) {
       AxisIter& axis_iter = axis_iters.back();
@@ -280,7 +275,7 @@ struct TraversalState {
             data_blocks[ai.axis()] = ai.take();
           }
         }
-        if (*inner_fileview_axis && axis == inner_fileview_axis->value())
+        if (axis == inner_fileview_axis)
           at_fileview_axis();
         if (axis_iter.at_buffer())
           return;

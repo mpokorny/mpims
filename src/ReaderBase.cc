@@ -46,7 +46,7 @@ ReaderBase::init_traversal_partitions(
   const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
   std::size_t& buffer_size,
   std::shared_ptr<std::vector<IterParams> >& iter_params,
-  std::shared_ptr<std::optional<MSColumns> >& inner_fileview_axis,
+  MSColumns& inner_fileview_axis,
   std::size_t value_size,
   int rank,
   bool debug_log) {
@@ -170,23 +170,33 @@ ReaderBase::init_traversal_partitions(
   // will define the axis on which the fileview needs to be set.
   {
     bool ooo = false; // out-of-order flag
+    std::optional<MSColumns> ifv;
     auto ip = iter_params->rbegin();
-    while (ip != iter_params->rend()) {
-      if (!*inner_fileview_axis) {
-        ooo = ooo || out_of_order.count(ip->axis) > 0;
-        bool complete_coverage =
-          ip->fully_in_array ||
-          map(
-            ip->max_size(),
-            [ip](const auto& sz) { return sz <= ip->buffer_capacity; }).
-          value_or(false);
-        if (!complete_coverage
-            && (ooo || !ip->selection_repeats_uniformly(comm)))
-          *inner_fileview_axis = ip->axis;
+    auto ip_end = iter_params->rend();
+    if (ip != ip_end) {
+      --ip_end;
+      while (ip != ip_end) {
+        if (!ifv) {
+          ooo = ooo || out_of_order.count(ip->axis) > 0;
+          bool complete_coverage =
+            ip->fully_in_array ||
+            map(
+              ip->max_size(),
+              [ip](const auto& sz) { return sz <= ip->buffer_capacity; }).
+            value_or(false);
+          if (!complete_coverage
+              && (ooo || !ip->selection_repeats_uniformly(comm)))
+            ifv= ip->axis;
+        }
+        ip->within_fileview = !ifv;
+        ++ip;
       }
-      ip->within_fileview = !inner_fileview_axis->has_value();
-      ++ip;
+      if (!ifv) {
+        ifv= ip->axis;
+        ip->within_fileview = false;
+      }
     }
+    inner_fileview_axis = ifv.value();
 
     // going in ms order set iter_params full_fv_axis to true starting at the
     // first axis that is within the fileview

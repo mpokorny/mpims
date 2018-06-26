@@ -71,7 +71,7 @@ struct ReaderBase {
     const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
     std::size_t& buffer_size,
     std::shared_ptr<std::vector<IterParams> >& iter_params,
-    std::shared_ptr<std::optional<MSColumns> >& inner_fileview_axis,
+    MSColumns& inner_fileview_axis,
     std::size_t value_size,
     int rank,
     bool debug_log);

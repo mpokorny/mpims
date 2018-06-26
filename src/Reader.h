@@ -80,7 +80,7 @@ public:
     std::shared_ptr<const std::vector<ColumnAxisBase<MSColumns> > > ms_shape,
     std::shared_ptr<const std::vector<IterParams> > iter_params,
     std::shared_ptr<const std::vector<MSColumns> > buffer_order,
-    std::shared_ptr<const std::optional<MSColumns> > inner_fileview_axis,
+    MSColumns inner_fileview_axis,
     std::shared_ptr<const ArrayIndexer<MSColumns> > ms_indexer,
     std::size_t buffer_size,
     std::size_t value_extent,
@@ -106,14 +106,6 @@ public:
       return;
 
     MPI_Comm_rank(handles->comm, &m_rank);
-
-    if (!*m_inner_fileview_axis)
-      set_fileview(
-        SetFileviewArgs {
-          m_traversal_state.data_blocks,
-            *m_traversal_state.fileview_datatype(m_inner_fileview_axis),
-            handles->file
-            });
 
     std::array<bool, 2> tests{ m_traversal_state.cont, m_traversal_state.eof() };
     MPI_Allreduce(
@@ -232,7 +224,7 @@ public:
     std::size_t value_extent;
     std::shared_ptr<std::vector<IterParams> > iter_params;
     std::shared_ptr<std::vector<MSColumns> > buffer_order;
-    std::shared_ptr<std::optional<MSColumns> > inner_fileview_axis;
+    MSColumns inner_fileview_axis;
     std::shared_ptr<ArrayIndexer<MSColumns> > ms_indexer;
     std::size_t buffer_size;
     TraversalState traversal_state;
@@ -428,7 +420,7 @@ protected:
     std::size_t value_extent;
     std::shared_ptr<std::vector<IterParams> > iter_params;
     std::shared_ptr<std::vector<MSColumns> > buffer_order;
-    std::shared_ptr<std::optional<MSColumns> > inner_fileview_axis;
+    MSColumns inner_fileview_axis;
     std::shared_ptr<ArrayIndexer<MSColumns> > ms_indexer;
     std::size_t buffer_size;
     TraversalState traversal_state;
@@ -493,7 +485,7 @@ protected:
     std::size_t& value_extent,
     std::shared_ptr<std::vector<IterParams> >& iter_params,
     std::shared_ptr<std::vector<MSColumns> >& buffer_order,
-    std::shared_ptr<std::optional<MSColumns> >& inner_fileview_axis,
+    MSColumns &inner_fileview_axis,
     std::shared_ptr<ArrayIndexer<MSColumns> >& ms_indexer,
     std::size_t& buffer_size,
     TraversalState& traversal_state) {
@@ -591,7 +583,6 @@ protected:
 
     iter_params =
       std::make_shared<std::vector<IterParams> >(traversal_order.size());
-    inner_fileview_axis = std::make_shared<std::optional<MSColumns> >();
     ms_indexer = ArrayIndexer<MSColumns>::of(ArrayOrder::row_major, ms_shape);
 
     init_iterparams(ms_shape, traversal_order, full_pgrid, rank, iter_params);
@@ -620,15 +611,10 @@ protected:
           << "read " << array_read->buffer_capacity
           << " arrays at " << mscol_nickname(array_read->axis)
           << std::endl;
-      if (*inner_fileview_axis)
-        out << "(" << rank << ") "
-            << "m_inner_fileview_axis "
-            << mscol_nickname(inner_fileview_axis->value())
-            << std::endl;
-      else
-        out << "(" << rank << ") "
-            << "no inner_fileview_axis"
-            << std::endl;
+      out << "(" << rank << ") "
+          << "m_inner_fileview_axis "
+          << mscol_nickname(inner_fileview_axis)
+          << std::endl;
       std::clog << out.str();
     }
 
@@ -1252,7 +1238,7 @@ private:
 
   std::shared_ptr<const std::vector<MSColumns> > m_buffer_order;
 
-  std::shared_ptr<const std::optional<MSColumns> > m_inner_fileview_axis;
+  MSColumns m_inner_fileview_axis;
 
   std::shared_ptr<const MPI_Datatype> m_etype_datatype;
 
