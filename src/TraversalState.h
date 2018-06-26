@@ -64,6 +64,56 @@ struct TraversalState {
     cont = true;
   }
 
+  TraversalState(const TraversalState& other)
+    : cont(other.cont)
+    , global_eof(other.global_eof)
+    , m_iter_params(other.m_iter_params)
+    , data_blocks(other.data_blocks)
+    , axis_iters(other.axis_iters)
+    , outer_full_array_axis(other.outer_full_array_axis)
+    , initial_outer_length(other.initial_outer_length)
+    , m_buffer_datatypes(other.m_buffer_datatypes)
+    , m_fileview_datatypes(other.m_fileview_datatypes)
+    , m_num_iterations(other.m_num_iterations) {
+  }
+
+  TraversalState(TraversalState&& other)
+    : cont(other.cont)
+    , global_eof(other.global_eof)
+    , m_iter_params(std::move(other).m_iter_params)
+    , data_blocks(std::move(other).data_blocks)
+    , axis_iters(std::move(other).axis_iters)
+    , outer_full_array_axis(other.outer_full_array_axis)
+    , initial_outer_length(other.initial_outer_length)
+    , m_buffer_datatypes(other.m_buffer_datatypes)
+    , m_fileview_datatypes(other.m_fileview_datatypes)
+    , m_num_iterations(std::move(other).m_num_iterations) {
+  }
+
+  TraversalState&
+  operator=(const TraversalState& rhs) {
+    if (this != &rhs) {
+      TraversalState temp(rhs);
+      swap(temp);
+    }
+    return *this;
+  }
+
+  TraversalState&
+  operator=(TraversalState&& rhs) {
+    cont = rhs.cont;
+    global_eof = rhs.global_eof;
+    m_iter_params = std::move(rhs).m_iter_params;
+    data_blocks = std::move(rhs).data_blocks;
+    axis_iters = std::move(rhs).axis_iters;
+    outer_full_array_axis = rhs.outer_full_array_axis;
+    initial_outer_length = rhs.initial_outer_length;
+    m_buffer_datatypes = rhs.m_buffer_datatypes;
+    m_fileview_datatypes = rhs.m_fileview_datatypes;
+    m_num_iterations = std::move(rhs).m_num_iterations;
+    return *this;
+  }
+
   //EOF condition
   bool
   eof() const {
@@ -86,15 +136,6 @@ struct TraversalState {
     return !cont || global_eof;
   }
 
-  // continuation condition flag (to allow breaking out from iteration)
-  bool cont;
-
-  bool global_eof;
-
-  std::shared_ptr<const std::vector<IterParams> > m_iter_params;
-
-  std::unordered_map<MSColumns, std::vector<finite_block_t> > data_blocks;
-
   bool
   at_data() const {
     return
@@ -105,14 +146,6 @@ struct TraversalState {
           return std::get<1>(cblk).size() > 0;
         });
   }
-
-  // stack of AxisIters to maintain axis iteration indexes
-  std::deque<AxisIter> axis_iters;
-
-  // the outermost axis at which data can fully fit into a buffer
-  MSColumns outer_full_array_axis;
-
-  std::optional<std::size_t> initial_outer_length;
 
   std::shared_ptr<const IterParams>
   iter_params(std::size_t i) {
@@ -259,6 +292,40 @@ struct TraversalState {
         axis_iters.pop_back(); 
       }
     }
+  }
+
+  // continuation condition flag (to allow breaking out from iteration)
+  bool cont;
+
+  bool global_eof;
+
+  std::shared_ptr<const std::vector<IterParams> > m_iter_params;
+
+  std::unordered_map<MSColumns, std::vector<finite_block_t> > data_blocks;
+
+  // stack of AxisIters to maintain axis iteration indexes
+  std::deque<AxisIter> axis_iters;
+
+  // the outermost axis at which data can fully fit into a buffer
+  MSColumns outer_full_array_axis;
+
+  std::optional<std::size_t> initial_outer_length;
+
+protected:
+
+  void
+  swap(TraversalState& other) {
+    using std::swap;
+    swap(cont, other.cont);
+    swap(global_eof, other.global_eof);
+    swap(m_iter_params, other.m_iter_params);
+    swap(data_blocks, other.data_blocks);
+    swap(axis_iters, other.axis_iters);
+    swap(outer_full_array_axis, other.outer_full_array_axis);
+    swap(initial_outer_length, other.initial_outer_length);
+    swap(m_buffer_datatypes, other.m_buffer_datatypes);
+    swap(m_fileview_datatypes, other.m_fileview_datatypes);
+    swap(m_num_iterations, other.m_num_iterations);
   }
 
 private:
