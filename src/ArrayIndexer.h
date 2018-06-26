@@ -108,6 +108,16 @@ public:
     if (!is_valid_index(ix))
       throw std::domain_error("Invalid index axes");
 
+    if (
+      std::any_of(
+        std::begin(m_axes),
+        std::end(m_axes),
+        [&ix](auto& ax) {
+          auto len = ax.length();
+          return len && ix.at(ax.id()) >= len.value();
+        }))
+      throw std::out_of_range("Index out of range");
+
     return offset_of_(ix);
   }
 
