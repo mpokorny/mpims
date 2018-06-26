@@ -44,6 +44,7 @@ void
 ReaderBase::init_traversal_partitions(
   MPI_Comm comm,
   const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
+  bool indeterminate_ms_size,
   std::size_t& buffer_size,
   std::shared_ptr<std::vector<IterParams> >& iter_params,
   MSColumns& inner_fileview_axis,
@@ -123,6 +124,13 @@ ReaderBase::init_traversal_partitions(
     start_buffer->buffer_capacity = start_buffer->max_size().value();
     start_buffer->fully_in_array = false;
   }
+
+  // limit buffer capacity to one whenever the outermost iteration axis has the
+  // buffer_capacity value set, and the ms data column has an indeterminate
+  // length -- this is required for proper termination of the iteration when the
+  // end of file is reached (prevents over-reading)
+  if (indeterminate_ms_size && (*iter_params)[0].buffer_capacity > 1)
+    (*iter_params)[0].buffer_capacity = 1;
 
   assert(start_buffer->buffer_capacity > 0);
   assert(start_buffer == iter_params->rbegin()

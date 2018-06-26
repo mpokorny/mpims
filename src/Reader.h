@@ -590,6 +590,7 @@ protected:
     init_traversal_partitions(
       reduced_comm,
       ms_shape,
+      indeterminate_ms,
       buffer_size,
       iter_params,
       inner_fileview_axis,
@@ -946,6 +947,7 @@ protected:
       // build datatype for fileview
       std::size_t dt_extent = value_extent;
       auto result = datatype(value_datatype);
+      bool last_unbounded = false;
 
       std::for_each(
         ms_shape.crbegin(),
@@ -956,24 +958,29 @@ protected:
           std::vector<finite_block_t> blocks;
           if (ip->within_fileview) {
             auto it = ip->begin();
-            if (!it->is_unbounded())
+            last_unbounded = it->is_unbounded();
+            if (!last_unbounded)
               blocks = it->take_blocked_all();
             else
               blocks = it->take_blocked_while(
                 [p=ip->period().value()](auto i){ return i < p; });
           } else if (ip->buffer_capacity > 0) {
+            last_unbounded = false;
             if (fv_blocks.size() > 0)
               blocks = fv_blocks;
             else
               blocks.emplace_back(0, ip->buffer_capacity);
           } else {
+            last_unbounded = false;
             blocks.emplace_back(0, 1);
           }
 
           std::size_t len =
             ip->full_fv_axis
             ? ip->axis_length.value_or(ip->period().value())
-            : 1;
+            : std::max(
+              static_cast<decltype(ip->buffer_capacity)>(1),
+              ip->buffer_capacity);
           std::tie(result, dt_extent) =
             finite_compound_datatype(
               result,
@@ -983,6 +990,17 @@ protected:
               rank,
               debug_log);
         });
+
+#ifdef MPIMS_READER_BIG_CONTIGUOUS_COUNT
+      if (last_unbounded) {
+        auto dt = std::move(result);
+        result = datatype();
+        MPI_Type_contiguous(
+          MPIMS_READER_BIG_CONTIGUOUS_COUNT,
+          *dt,
+          result.get());
+      }
+#endif
 
       MPI_Type_commit(result.get());
 

@@ -25,7 +25,7 @@ public:
     auto max_size = m_params->max_size();
     m_at_data = (!max_size || max_size.value() > 0) && outer_at_data;
     if (m_params->fully_in_array) {
-      m_take_n = m_params->size().value_or(m_params->period().value());
+      m_take_n = m_params->size().value();
       m_at_buffer = false;
     } else if (m_params->buffer_capacity > 0) {
       m_take_n = m_params->buffer_capacity;

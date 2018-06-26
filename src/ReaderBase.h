@@ -69,6 +69,7 @@ struct ReaderBase {
   init_traversal_partitions(
     MPI_Comm comm,
     const std::vector<ColumnAxisBase<MSColumns> >& ms_shape,
+    bool indeterminate_ms_size,
     std::size_t& buffer_size,
     std::shared_ptr<std::vector<IterParams> >& iter_params,
     MSColumns& inner_fileview_axis,
