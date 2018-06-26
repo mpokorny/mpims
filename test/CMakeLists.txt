@@ -1,3 +1,5 @@
+find_package(MPI REQUIRED)
+
 include_directories(
   ${INCLUDE_DIRECTORIES} "../src")
 link_libraries(
@@ -27,6 +29,9 @@ target_compile_options(
 add_executable(
   DataDistributionTest
   DataDistributionTest.cc)
+target_include_directories(
+  DataDistributionTest PRIVATE
+  ${MPI_CXX_INCLUDE_PATH})
 target_compile_options(
   DataDistributionTest PUBLIC
   ${GTEST_CFLAGS_OTHER})

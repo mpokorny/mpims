@@ -324,10 +324,14 @@ public:
 
     Iterator&
     operator++() override {
+      ++m_block_offset;
       std::size_t b0;
       std::optional<std::size_t> blen;
       std::tie(b0, blen) = m_block.value();
-      if (blen && ++m_block_offset == blen.value()) {
+      if (map(
+            blen,
+            [&](auto bl){ return bl == m_block_offset; }).
+          value_or(false)) {
         std::tie(m_next_state, m_block) = (*m_generator)(m_next_state);
         if (m_block && std::get<0>(m_block.value()) < b0 + blen.value())
           throw std::domain_error("overlapping blocks");

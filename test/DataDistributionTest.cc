@@ -8,14 +8,6 @@
 
 using namespace mpims;
 
-template <
-  typename T,
-  typename = typename std::enable_if<std::is_unsigned<T>::value>::type >
-T
-ceil(T num, T denom) {
-  return (num + (denom - 1)) / denom;
-}
-
 TEST(DataDistribution, OrderValue) {
 
   const std::size_t block_size = 3, group_size = 2, axis_length = 14;
@@ -120,6 +112,23 @@ TEST(DataDistribution, Iteration) {
         }));
     EXPECT_TRUE(it->at_end());
   }
+}
+
+TEST(DataDistribution, ApproximateUnboundedBlockIteration) {
+
+  auto dd =
+    DataDistributionFactory::block_sequence(
+      std::vector{ std::vector{ block_t{ 0, std::nullopt } } },
+      std::nullopt);
+  const std::size_t limit = 100000;
+  auto it = dd->begin(0);
+  auto indices = it->take(limit);
+  EXPECT_FALSE(it->at_end());
+  EXPECT_EQ(indices.size(), limit);
+  std::size_t n = 0;
+  std::vector<std::size_t> expect;
+  std::generate_n(std::back_inserter(expect), limit, [&](){ return n++; });
+  EXPECT_EQ(indices, expect);
 }
 
 TEST(DataDistribution, IteratorTake) {
