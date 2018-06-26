@@ -969,7 +969,8 @@ protected:
           auto ip = find_iter_params(iter_params, ax.id());
           std::vector<finite_block_t> blocks;
           if (ip->within_fileview) {
-            blocks = ip->begin()->take_all_blocked();
+            auto it = ip->begin();
+              blocks = it->take_blocked_all();
           } else if (ip->buffer_capacity > 0) {
             if (fv_blocks.size() > 0)
               blocks = fv_blocks;

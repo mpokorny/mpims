@@ -118,7 +118,7 @@ public:
     }
 
     std::vector<finite_block_t>
-    take_all_blocked() {
+    take_blocked_all() {
       auto seq = take_all();
       return mpims::blocks(std::begin(seq), std::end(seq));
     }
@@ -147,7 +147,7 @@ public:
 
   std::vector<finite_block_t>
   blocks(std::size_t rank) const {
-    return begin(rank)->take_all_blocked();
+    return begin(rank)->take_blocked_all();
   }
 
   std::optional<std::size_t>
@@ -209,7 +209,7 @@ public:
     for (std::size_t rank = 0; rank < m_order; ++rank){
       result << rksep << rank << ":[";
       const char *blksep = "";
-      for (const auto& blk : begin(rank)->take_all_blocked()) {
+      for (const auto& blk : begin(rank)->take_blocked_all()) {
         std::size_t b0;
         std::optional<std::size_t> blen;
         std::tie(b0, blen) = blk;
