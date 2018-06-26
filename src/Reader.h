@@ -970,7 +970,11 @@ protected:
           std::vector<finite_block_t> blocks;
           if (ip->within_fileview) {
             auto it = ip->begin();
+            if (!it->is_unbounded())
               blocks = it->take_blocked_all();
+            else
+              blocks = it->take_blocked_while(
+                [p=ip->period().value()](auto i){ return i < p; });
           } else if (ip->buffer_capacity > 0) {
             if (fv_blocks.size() > 0)
               blocks = fv_blocks;
@@ -981,7 +985,9 @@ protected:
           }
 
           std::size_t len =
-            ip->full_fv_axis ? ip->axis_length.value() : 1;
+            ip->full_fv_axis
+            ? ip->axis_length.value_or(ip->period().value())
+            : 1;
           std::tie(result, dt_extent) =
             finite_compound_datatype(
               result,

@@ -83,7 +83,7 @@ struct IterParams {
       map(
         period(),
         [this](auto p) {
-          return begin()->take_while([&p](auto& i) { return i < p; }).size(); 
+          return begin()->take_while([&p](auto& i){ return i < p; }).size();
         }).value_or(1);
   }
 
@@ -129,20 +129,24 @@ struct IterParams {
     return !(operator==(rhs));
   }
 
-  std::size_t
+  std::optional<std::size_t>
   num_total_iterations() const {
-    std::size_t result;
-    if (fully_in_array) {
-      result = 1;
-    } else if (buffer_capacity > 0) {
-      auto iter = begin();
-      result = 0;
-      while (!iter->at_end()) {
-        ++result;
-        iter->take_blocked(buffer_capacity);
+    std::optional<std::size_t> result;
+    auto sz = size();
+    if (sz) {
+      if (fully_in_array) {
+        result = 1;
+      } else if (buffer_capacity > 0) {
+        std::size_t n = 0;
+        auto iter = begin();
+        while (!iter->at_end()) {
+          ++n;
+          iter->take_blocked(buffer_capacity);
+        }
+        result = n;
+      } else {
+        result = sz;
       }
-    } else {
-      result = size().value();
     }
     return result;
   }

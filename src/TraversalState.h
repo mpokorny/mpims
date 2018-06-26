@@ -36,15 +36,15 @@ struct TraversalState {
     std::size_t outer_ms_length,
     MSColumns outer_full_array_axis_,
     const std::function<
-      const std::tuple<std::shared_ptr<const MPI_Datatype>, unsigned>&(
-        const std::size_t&)>& buffer_datatypes,
+    const std::tuple<std::shared_ptr<const MPI_Datatype>, unsigned>&(
+      const std::size_t&)>& buffer_datatypes,
     const std::function<
-      const std::shared_ptr<const MPI_Datatype>&(
-        const std::vector<finite_block_t>&) >& fileview_datatypes)
-  : m_iter_params(iter_params)
-  , outer_full_array_axis(outer_full_array_axis_)
-  , m_buffer_datatypes(buffer_datatypes)
-  , m_fileview_datatypes(fileview_datatypes) {
+    const std::shared_ptr<const MPI_Datatype>&(
+      const std::vector<finite_block_t>&) >& fileview_datatypes)
+    : m_iter_params(iter_params)
+    , outer_full_array_axis(outer_full_array_axis_)
+    , m_buffer_datatypes(buffer_datatypes)
+    , m_fileview_datatypes(fileview_datatypes) {
 
     global_eof = false;
     m_num_iterations = max_iterations(comm, m_iter_params);
@@ -127,7 +127,7 @@ struct TraversalState {
         [&](auto iol) {
           auto next_blocks = axis_iters.front().next_blocks();
           return (next_blocks.size() == 0
-                  || std::get<0>(next_blocks[0]) >= iol); 
+                  || std::get<0>(next_blocks[0]) >= iol);
         }).value_or(false);
   };
 
@@ -206,8 +206,8 @@ struct TraversalState {
             return std::make_tuple(b0 - origin, blen);
           });
       }
-    } 
-    return m_fileview_datatypes(blks); 
+    }
+    return m_fileview_datatypes(blks);
   }
 
   bool
@@ -277,7 +277,7 @@ struct TraversalState {
             AxisIter ai =
               AxisIter(iter_params(i), m_num_iterations[i], at_data);
             at_data = ai.at_data();
-            data_blocks[ai.axis()] = ai.take(); 
+            data_blocks[ai.axis()] = ai.take();
           }
         }
         if (*inner_fileview_axis && axis == inner_fileview_axis->value())
@@ -289,7 +289,7 @@ struct TraversalState {
           m_num_iterations[depth],
           at_data);
       } else {
-        axis_iters.pop_back(); 
+        axis_iters.pop_back();
       }
     }
   }
@@ -338,29 +338,54 @@ private:
     const std::shared_ptr<const MPI_Datatype>&(
       const std::vector<finite_block_t>&)> m_fileview_datatypes;
 
-  std::vector<std::size_t> m_num_iterations;
+  std::vector<std::optional<std::size_t> > m_num_iterations;
 
-  static std::vector<std::size_t>
+  static std::vector<std::optional<std::size_t> >
   max_iterations(
     MPI_Comm comm,
     const std::shared_ptr<const std::vector<IterParams> >& iter_params) {
 
-    std::vector<std::size_t> result;
-    result.reserve(iter_params->size());
-    std::transform(
+    // type bool won't work for inf_nit, since vector<bool> is specialized such
+    // that accessing the data for MPI communication won't work
+    std::vector<unsigned char> inf_nit;
+    std::vector<std::size_t> nit;
+    inf_nit.reserve(iter_params->size());
+    nit.reserve(iter_params->size());
+    std::for_each(
       std::begin(*iter_params),
       std::end(*iter_params),
-      std::back_inserter(result),
-      [](auto& ip) {
-        return ip.num_total_iterations();
+      [&](auto& ip) {
+        auto num_iterations = ip.num_total_iterations();
+        if (num_iterations) {
+          inf_nit.emplace_back(false);
+          nit.emplace_back(num_iterations.value());
+        } else {
+          inf_nit.emplace_back(true);
+          nit.emplace_back(0);
+        }
       });
     MPI_Allreduce(
       MPI_IN_PLACE,
-      result.data(),
-      result.size(),
+      inf_nit.data(),
+      inf_nit.size(),
+      MPI_UNSIGNED_CHAR,
+      MPI_LOR,
+      comm);
+    MPI_Allreduce(
+      MPI_IN_PLACE,
+      nit.data(),
+      nit.size(),
       MPIMS_SIZE_T,
       MPI_MAX,
       comm);
+    std::vector<std::optional<std::size_t> > result;
+    result.reserve(inf_nit.size());
+    for (std::size_t i = 0; i < inf_nit.size(); ++i) {
+      if (inf_nit[i])
+        result.emplace_back(std::nullopt);
+      else
+        result.emplace_back(nit[i]);
+    }
     return result;
   }
 

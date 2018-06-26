@@ -12,6 +12,7 @@
 #include <tuple>
 #include <vector>
 
+#include <mpims.h>
 #include <BlockGenerator.h>
 
 namespace mpims {
@@ -137,6 +138,13 @@ public:
         }
       }
       return result;
+    }
+
+    template <typename F>
+    std::vector<finite_block_t>
+    take_blocked_while(F p) {
+      auto seq = take_while(p);
+      return mpims::blocks(std::begin(seq), std::end(seq));
     }
   };
 

@@ -15,7 +15,7 @@ public:
 
   AxisIter(
     const std::shared_ptr<const IterParams>& params,
-    std::size_t num_iterations,
+    const std::optional<std::size_t>& num_iterations,
     bool outer_at_data)
     : m_params(params)
     , m_iter(m_params->begin())
@@ -25,7 +25,7 @@ public:
     auto max_size = m_params->max_size();
     m_at_data = (!max_size || max_size.value() > 0) && outer_at_data;
     if (m_params->fully_in_array) {
-      m_take_n = m_params->size().value();
+      m_take_n = m_params->size().value_or(m_params->period().value());
       m_at_buffer = false;
     } else if (m_params->buffer_capacity > 0) {
       m_take_n = m_params->buffer_capacity;
@@ -104,14 +104,6 @@ public:
     return m_blocks;
   }
 
-  void
-  complete() {
-    while (m_index < m_length) {
-      m_blocks = m_iter->take_blocked(m_take_n);
-      ++m_index;
-    }
-  }
-
   bool
   at_data() const {
     return m_at_data;
@@ -119,7 +111,7 @@ public:
 
   bool
   at_end() const {
-    return m_index >= m_length;
+    return m_length && m_index >= m_length.value();
   }
 
   MSColumns
@@ -166,7 +158,7 @@ private:
   bool m_at_data;
   bool m_at_buffer;
   std::size_t m_index;
-  std::size_t m_length;
+  std::optional<std::size_t> m_length;
 };
 
 }
