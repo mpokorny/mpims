@@ -77,6 +77,7 @@ checkit(
   shared_ptr<ArrayIndexer<MSColumns> >& full_array_indexer,
   vector<IndexBlockSequence<MSColumns> >::const_iterator begin,
   vector<IndexBlockSequence<MSColumns> >::const_iterator end,
+  bool& index_out_of_range,
   ostringstream& output)
   __attribute__((unused));
 
@@ -89,6 +90,7 @@ checkit(
   shared_ptr<ArrayIndexer<MSColumns> >& full_array_indexer,
   vector<IndexBlockSequence<MSColumns> >::const_iterator begin,
   vector<IndexBlockSequence<MSColumns> >::const_iterator end,
+  bool& index_out_of_range,
   ostringstream& output) {
 
   auto next = begin;
@@ -107,6 +109,7 @@ checkit(
             full_array_indexer,
             next,
             end,
+            index_out_of_range,
             output)
           && result;
         coords.pop_back();
@@ -117,37 +120,41 @@ checkit(
         coords.emplace_back(begin->m_axis, b.m_index + i);
         unordered_map<MSColumns, size_t> coords_map(
           std::begin(coords), std::end(coords));
-        auto offset = full_array_indexer->offset_of_(coords_map);
-        if (offset)
-          full_array[offset.value()] = buffer[n];
-        size_t tim, spw, bal, ch, pol;
-        decode_vis(buffer[n++], tim, spw, bal, ch, pol);
-        if (coords_map[MSColumns::time] != tim
-            || coords_map[MSColumns::spectral_window] != spw
-            || coords_map[MSColumns::baseline] != bal
-            || coords_map[MSColumns::channel] != ch
-            || coords_map[MSColumns::polarization_product] != pol) {
-          result = false;
-          unordered_map<MSColumns, size_t> value_map {
-            {MSColumns::time, tim},
-            {MSColumns::spectral_window, spw},
-            {MSColumns::baseline, bal},
-            {MSColumns::channel, ch},
-            {MSColumns::polarization_product, pol}
-          };
-          output << "error at ("
-                 << coords[0].second << ","
-                 << coords[1].second << ","
-                 << coords[2].second << ","
-                 << coords[3].second << ","
-                 << coords[4].second << "); "
-                 << "value: ("
-                 << value_map[coords[0].first] << ","
-                 << value_map[coords[1].first] << ","
-                 << value_map[coords[2].first] << ","
-                 << value_map[coords[3].first] << ","
-                 << value_map[coords[4].first] << ")"
-                 << endl;
+        try {
+          auto offset = full_array_indexer->offset_of(coords_map);
+          if (offset)
+            full_array[offset.value()] = buffer[n];
+          size_t tim, spw, bal, ch, pol;
+          decode_vis(buffer[n++], tim, spw, bal, ch, pol);
+          if (coords_map[MSColumns::time] != tim
+              || coords_map[MSColumns::spectral_window] != spw
+              || coords_map[MSColumns::baseline] != bal
+              || coords_map[MSColumns::channel] != ch
+              || coords_map[MSColumns::polarization_product] != pol) {
+            result = false;
+            unordered_map<MSColumns, size_t> value_map {
+              {MSColumns::time, tim},
+              {MSColumns::spectral_window, spw},
+              {MSColumns::baseline, bal},
+              {MSColumns::channel, ch},
+              {MSColumns::polarization_product, pol}
+            };
+            output << "error at ("
+                   << coords[0].second << ","
+                   << coords[1].second << ","
+                   << coords[2].second << ","
+                   << coords[3].second << ","
+                   << coords[4].second << "); "
+                   << "value: ("
+                   << value_map[coords[0].first] << ","
+                   << value_map[coords[1].first] << ","
+                   << value_map[coords[2].first] << ","
+                   << value_map[coords[3].first] << ","
+                   << value_map[coords[4].first] << ")"
+                   << endl;
+          }
+        } catch (const std::out_of_range& oor) {
+          index_out_of_range = true;
         }
         coords.pop_back();
       }
@@ -160,6 +167,7 @@ cb(
   const CxFltMSArray& array,
   complex<float>* full_array,
   shared_ptr<ArrayIndexer<MSColumns> >& full_array_indexer,
+  bool& index_out_of_range,
   ostringstream& output) {
 
   if (!array.buffer())
@@ -188,6 +196,7 @@ cb(
       full_array_indexer,
       begin(indexes),
       end(indexes),
+      index_out_of_range,
       output);
   if (result)
     output << "no errors" << endl;
@@ -362,7 +371,7 @@ main(int argc, char* argv[]) {
   int world_size;
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
-  auto full_array_indexer =
+  auto full_array_idx =
     ArrayIndexer<MSColumns>::of(ArrayOrder::row_major, ms_shape);
   complex<float>* full_array;
   MPI_Info info;
@@ -392,7 +401,7 @@ main(int argc, char* argv[]) {
             if (mss[0].is_indeterminate() && to[0] !=  mss[0].id())
               continue;
 
-            for (std::size_t i = 0; i < max_buffer_length; ++i) 
+            for (std::size_t i = 0; i < max_buffer_length; ++i)
               full_array[i] = complex{NAN, NAN};
 
             ostringstream output;
@@ -419,10 +428,11 @@ main(int argc, char* argv[]) {
                 bs,
                 false);
 
+            bool index_oor = false;
             while (reader != CxFltReader::end()) {
               const CxFltMSArray& array = *reader;
               if (array.buffer()) {
-                if (cb(array, full_array, full_array_indexer, output))
+                if (cb(array, full_array, full_array_idx, index_oor, output))
                   ++reader;
                 else
                   reader.interrupt();
@@ -445,6 +455,9 @@ main(int argc, char* argv[]) {
                        << my_rank
                        << " ***************"
                        << endl;
+                if (index_oor)
+                  output << "---- error: out of range array indexes ---- "
+                         << endl;
                 cout << output.str();
               }
               ++output_rank;
@@ -477,7 +490,7 @@ main(int argc, char* argv[]) {
   MPI_Win_free(&full_array_win);
   MPI_Finalize();
 
-return 0;
+  return 0;
 }
 
 // Local Variables:
