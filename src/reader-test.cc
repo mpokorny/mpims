@@ -198,8 +198,6 @@ cb(
       end(indexes),
       index_out_of_range,
       output);
-  if (result)
-    output << "no errors" << endl;
 
   return result;
 }
@@ -469,12 +467,10 @@ main(int argc, char* argv[]) {
               for (std::size_t i = 0; i < max_buffer_length; ++i)
                 if (isnan(full_array[i]))
                   ++num_missing;
-              cout << "++++++++ ";
-              if (num_missing == 0)
-                cout << "no";
-              else
-                cout << num_missing;
-              cout << " missing elements ++++++++" << endl;
+              if (num_missing > 0)
+                cout << "++++ error: "
+                     << num_missing
+                     << " missing elements ++++" << endl;
             }
           }
         }
