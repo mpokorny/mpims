@@ -2,6 +2,7 @@
 #define TRAVERSAL_STATE_H_
 
 #include <deque>
+#include <numeric>
 #include <sstream>
 #include <memory>
 #include <vector>
@@ -166,13 +167,12 @@ struct TraversalState {
     }
     if (blks) {
       // get buffer datatype, based on number of elements in blocks
-      std::size_t count = 0;
-      std::for_each(
-        std::begin(*blks),
-        std::end(*blks),
-        [&count](auto& blk) {
-          count += std::get<1>(blk);
-        });
+      std::size_t count =
+        std::accumulate(
+          std::begin(*blks),
+          std::end(*blks),
+          0,
+          [](auto& acc, auto& blk) { return acc + std::get<1>(blk); });
       return m_buffer_datatypes(count);
     } else {
       return zilch;
