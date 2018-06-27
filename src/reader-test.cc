@@ -2,8 +2,13 @@
 #include <complex>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <memory>
+#include <numeric>
+#include <set>
 #include <sstream>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -78,6 +83,7 @@ checkit(
   vector<IndexBlockSequence<MSColumns> >::const_iterator begin,
   vector<IndexBlockSequence<MSColumns> >::const_iterator end,
   bool& index_out_of_range,
+  unordered_map<MSColumns, set<size_t> >& indexes,
   ostringstream& output)
   __attribute__((unused));
 
@@ -91,6 +97,7 @@ checkit(
   vector<IndexBlockSequence<MSColumns> >::const_iterator begin,
   vector<IndexBlockSequence<MSColumns> >::const_iterator end,
   bool& index_out_of_range,
+  unordered_map<MSColumns, set<size_t> >& indexes,
   ostringstream& output) {
 
   auto next = begin;
@@ -110,6 +117,7 @@ checkit(
             next,
             end,
             index_out_of_range,
+            indexes,
             output)
           && result;
         coords.pop_back();
@@ -120,6 +128,15 @@ checkit(
         coords.emplace_back(begin->m_axis, b.m_index + i);
         unordered_map<MSColumns, size_t> coords_map(
           std::begin(coords), std::end(coords));
+        for_each(
+          std::begin(coords_map),
+          std::end(coords_map),
+          [&](auto& ci) {
+            MSColumns col;
+            size_t idx;
+            tie(col, idx) = ci;
+            indexes[col].insert(idx);
+          });
         try {
           auto offset = full_array_indexer->offset_of(coords_map);
           if (offset)
@@ -153,7 +170,7 @@ checkit(
                    << value_map[coords[4].first] << ")"
                    << endl;
           }
-        } catch (const std::out_of_range& oor) {
+        } catch (const out_of_range& oor) {
           index_out_of_range = true;
         }
         coords.pop_back();
@@ -168,14 +185,15 @@ cb(
   complex<float>* full_array,
   shared_ptr<ArrayIndexer<MSColumns> >& full_array_indexer,
   bool& index_out_of_range,
+  unordered_map<MSColumns, set<size_t> >& indexes,
   ostringstream& output) {
 
   if (!array.buffer())
     return false;
-  auto indexes = array.blocks();
+  auto array_indexes = array.blocks();
 
   output << "next buffer..." << endl;
-  for (auto& seq : indexes) {
+  for (auto& seq : array_indexes) {
     output << mscol_nickname(seq.m_axis) << ": [";
     const char *sep = "";
     for (auto& block : seq.m_blocks) {
@@ -194,9 +212,10 @@ cb(
       coords,
       full_array,
       full_array_indexer,
-      begin(indexes),
-      end(indexes),
+      begin(array_indexes),
+      end(array_indexes),
       index_out_of_range,
+      indexes,
       output);
 
   return result;
@@ -207,7 +226,7 @@ merge_full_arrays(
   MPI_Win win,
   int rank,
   complex<float>* full_array,
-  std::size_t array_length) {
+  size_t array_length) {
 
   MPI_Group group;
   MPI_Win_get_group(win, &group);
@@ -220,7 +239,7 @@ merge_full_arrays(
     MPI_Win_wait(win);
   } else {
     MPI_Win_start(g0, 0, win);
-    std::size_t i = 0;
+    size_t i = 0;
     while (i < array_length) {
       int count = 0;
       while (i < array_length && !isnan(full_array[i])) {
@@ -245,6 +264,191 @@ merge_full_arrays(
   MPI_Group_free(&g0);
   MPI_Group_free(&grest);
   MPI_Group_free(&group);
+}
+
+vector<vector<size_t> >
+gather_indexes(int num_ranks, const set<size_t>& indexes) {
+  vector<int> all_num_indexes(num_ranks);
+  vector<size_t> is(std::begin(indexes), std::end(indexes));
+  int num_indexes = is.size();
+  MPI_Gather(
+    &num_indexes,
+    1,
+    MPI_INT,
+    all_num_indexes.data(),
+    1,
+    MPI_INT,
+    0,
+    MPI_COMM_WORLD);
+  int total_num_indexes =
+    accumulate(std::begin(all_num_indexes), std::end(all_num_indexes), 0);
+  vector<size_t> all_indexes(total_num_indexes);
+  vector<int> displacements;
+  displacements.emplace_back(0);
+  partial_sum(
+    std::begin(all_num_indexes),
+    std::end(all_num_indexes),
+    std::back_inserter(displacements));
+  MPI_Gatherv(
+    is.data(),
+    num_indexes,
+    MPIMS_SIZE_T,
+    all_indexes.data(),
+    all_num_indexes.data(),
+    displacements.data(),
+    MPIMS_SIZE_T,
+    0,
+    MPI_COMM_WORLD);
+  vector<vector<size_t> > result;
+  for (int r = 0; r < num_ranks; ++r) {
+    vector<size_t> ris;
+    for (int i = 0; i < all_num_indexes[r]; ++i)
+      ris.push_back(all_indexes[i + displacements[r]]);
+    result.emplace_back(std::move(ris));
+  }
+  return result;
+}
+
+void
+fill_grid(
+  const unordered_map<MSColumns, shared_ptr<const DataDistribution> >& dists,
+  vector<ColumnAxisBase<MSColumns> >::const_iterator begin,
+  vector<ColumnAxisBase<MSColumns> >::const_iterator end,
+  vector<pair<MSColumns, size_t> >& grid_coords,
+  shared_ptr<ArrayIndexer<MSColumns> >& grid_indexer,
+  vector<std::map<MSColumns, vector<size_t> > >& grid_distribution) {
+
+  auto next = begin;
+  ++next;
+  if (next != end) {
+    auto len = begin->length().value();
+    auto col = begin->id();
+    for (size_t i = 0; i < len; ++i) {
+      grid_coords.emplace_back(col, i);
+      fill_grid(
+        dists,
+        next,
+        end,
+        grid_coords,
+        grid_indexer,
+        grid_distribution);
+      grid_coords.pop_back();
+    }
+  } else {
+    auto len = begin->length().value();
+    auto col = begin->id();
+    for (size_t i = 0; i < len; ++i) {
+      grid_coords.emplace_back(col, i);
+      unordered_map<MSColumns, size_t> coords_map(
+        std::begin(grid_coords), std::end(grid_coords));
+      std::map<MSColumns, vector<size_t> > grid_indexes;
+      for_each(
+        std::begin(coords_map),
+        std::end(coords_map),
+        [&grid_indexes, &dists](auto& ci) {
+          MSColumns col;
+          size_t idx;
+          std::tie(col, idx) = ci;
+          grid_indexes[col] = dists.at(col)->begin(idx)->take_all();
+        });
+      grid_distribution[grid_indexer->offset_of(coords_map).value()] =
+        grid_indexes;
+      grid_coords.pop_back();
+    }
+  }
+}
+
+bool
+check_grid_distribution(
+  const unordered_map<MSColumns, GridDistribution>& pgrid,
+  const vector<ColumnAxisBase<MSColumns> >& ms_shape,
+  const unordered_map<MSColumns, set<size_t> >& indexes) {
+
+  // gather to rank 0 the indexes received by each rank, by column id
+  int num_ranks;
+  MPI_Comm_size(MPI_COMM_WORLD, &num_ranks);
+  unordered_map<MSColumns, vector<vector<size_t> > > all_indexes;
+  for_each(
+    begin(ms_shape),
+    end(ms_shape),
+    [&num_ranks, &indexes, &all_indexes](auto& ax) {
+      all_indexes[ax.id()] = gather_indexes(num_ranks, indexes.at(ax.id()));
+    });
+
+  // transpose all_indexes to create a vector indexed by rank of received
+  // indexes for each column id; use a map rather than unsorted_map here to
+  // enable the immediately following sort() call
+  vector<std::map<MSColumns, vector<size_t> > > rank_indexes(num_ranks);
+  for_each(
+    begin(all_indexes),
+    end(all_indexes),
+    [&rank_indexes, &num_ranks](auto& cis) {
+      MSColumns col;
+      vector<vector<size_t> > is;
+      std::tie(col, is) = cis;
+      for (int r = 0; r < num_ranks; ++r)
+        rank_indexes[r][col] = is[r];
+    });
+  // since we don't really care about rank values (which is an implementation
+  // detail), we will sort rank_indexes for simpler comparison with the expected
+  // index sets
+  sort(begin(rank_indexes), end(rank_indexes));
+
+  // create DataDistributions for the process grid, using the ms axis lengths in
+  // ms_shape, and creating "unpartitioned" distributions for all axes not in
+  // pgrid
+  unordered_map<MSColumns, shared_ptr<const DataDistribution> > dists;
+  for_each(
+    begin(ms_shape),
+    end(ms_shape),
+    [&pgrid, &dists](auto& ax) {
+      if (pgrid.count(ax.id()) > 0)
+        dists[ax.id()] = pgrid.at(ax.id())(ax.length());
+      else
+        dists[ax.id()] = GridDistributionFactory::unpartitioned()(ax.length());
+    });
+
+  // create an array axis specification (or shape) for the process grid
+  vector<ColumnAxisBase<MSColumns> > grid_shape;
+  transform(
+    begin(ms_shape),
+    end(ms_shape),
+    back_inserter(grid_shape),
+    [&dists](auto& ax) {
+      return ColumnAxisBase<MSColumns>(
+        static_cast<unsigned>(ax.id()), dists[ax.id()]->order());
+    });
+  // compute size of process grid
+  auto grid_size =
+    accumulate(
+      begin(grid_shape),
+      end(grid_shape),
+      1,
+      [](auto& sz, auto& ax){
+        return sz * ax.length().value();
+      });
+  // create an array for the process grid, in which we will store the expected
+  // index sets for each process in the grid; again, use map rather than
+  // unsorted_map since we intend to sort the vector
+  auto grid_distribution =
+    vector<std::map<MSColumns, vector<size_t> > >(grid_size);
+  // we can use an ArrayIndexer to index the grid_distribution array
+  auto grid_indexer =
+    ArrayIndexer<MSColumns>::of(ArrayOrder::row_major, grid_shape);
+  // fill the grid_distribution array with the expected index sets
+  vector<pair<MSColumns, size_t> > grid_coords;
+  fill_grid(
+    dists,
+    begin(grid_shape),
+    end(grid_shape),
+    grid_coords,
+    grid_indexer,
+    grid_distribution);
+  // again, we don't care about the ordering of elements in grid_distribution,
+  // we will sort that array for easier comparison with rank_indexes
+  sort(begin(grid_distribution), end(grid_distribution));
+
+  return grid_distribution == rank_indexes;
 }
 
 void
@@ -302,9 +506,9 @@ colnames(const vector<MSColumns>& cols) {
   return result.str();
 }
 
-std::size_t
-num_elements(std::size_t sz) {
-  return sz / sizeof(std::complex<float>);
+size_t
+num_elements(size_t sz) {
+  return sz / sizeof(complex<float>);
 }
 
 int
@@ -389,7 +593,7 @@ main(int argc, char* argv[]) {
     write_file(argv[1], ms_shape);
   MPI_Barrier(MPI_COMM_WORLD);
 
-  std::array<bool,2> ms_order{ false, true };
+  array<bool,2> ms_order{ false, true };
 
   try {
     for (auto& mso : ms_order) {
@@ -399,7 +603,7 @@ main(int argc, char* argv[]) {
             if (mss[0].is_indeterminate() && to[0] !=  mss[0].id())
               continue;
 
-            for (std::size_t i = 0; i < max_buffer_length; ++i)
+            for (size_t i = 0; i < max_buffer_length; ++i)
               full_array[i] = complex{NAN, NAN};
 
             ostringstream output;
@@ -427,10 +631,17 @@ main(int argc, char* argv[]) {
                 false);
 
             bool index_oor = false;
+            unordered_map<MSColumns, set<size_t> > indexes;
             while (reader != CxFltReader::end()) {
               const CxFltMSArray& array = *reader;
               if (array.buffer()) {
-                if (cb(array, full_array, full_array_idx, index_oor, output))
+                if (cb(
+                      array,
+                      full_array,
+                      full_array_idx,
+                      index_oor,
+                      indexes,
+                      output))
                   ++reader;
                 else
                   reader.interrupt();
@@ -444,6 +655,9 @@ main(int argc, char* argv[]) {
               my_rank,
               full_array,
               max_buffer_length);
+
+            bool distribution_ok =
+              check_grid_distribution(pgrid, ms_shape, indexes);
 
             int output_rank = 0;
             while (output_rank < world_size) {
@@ -463,14 +677,16 @@ main(int argc, char* argv[]) {
             }
 
             if (my_rank == 0) {
-              std::size_t num_missing = 0;
-              for (std::size_t i = 0; i < max_buffer_length; ++i)
+              size_t num_missing = 0;
+              for (size_t i = 0; i < max_buffer_length; ++i)
                 if (isnan(full_array[i]))
                   ++num_missing;
               if (num_missing > 0)
                 cout << "++++ error: "
                      << num_missing
                      << " missing elements ++++" << endl;
+              if (!distribution_ok)
+                cout << "#### error: distribution failure ####" << endl;
             }
           }
         }
