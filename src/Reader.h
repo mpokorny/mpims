@@ -395,7 +395,7 @@ public:
 protected:
 
   struct SetFileviewArgs {
-    std::unordered_map<MSColumns, std::vector<finite_block_t> > data_blocks;
+    std::unordered_map<MSColumns, std::vector<finite_block_t> > blocks_map;
     MPI_Datatype datatype;
     MPI_File file;
   };
@@ -1125,7 +1125,7 @@ protected:
       std::begin(*m_iter_params),
       std::end(*m_iter_params),
       [&data_index, &args](const auto& ip) {
-        auto blks = args.data_blocks.at(ip.axis);
+        auto blks = args.blocks_map.at(ip.axis);
         if (ip.within_fileview || blks.size() == 0)
           data_index[ip.axis] = 0;
         else
@@ -1178,7 +1178,7 @@ protected:
       [this, &traversal_state, &file]() {
 
         auto args = SetFileviewArgs {
-          traversal_state.data_blocks,
+          traversal_state.blocks_map(),
           *traversal_state.fileview_datatype(m_inner_fileview_axis),
           file
         };
