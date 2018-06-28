@@ -1209,8 +1209,6 @@ protected:
     return result;
   }
 
-  mutable std::shared_ptr<const MPI_Datatype> m_buffer_datatype;
-
   bool
   buffer_order_compare(const MSColumns& col0, const MSColumns& col1) const {
     auto p0 =
