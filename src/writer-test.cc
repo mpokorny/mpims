@@ -399,7 +399,7 @@ main(int argc, char* argv[]) {
                   ms_top_len);
             {
               auto reader =
-                Reader<std::complex<float> >::begin(
+                CxFltReader::begin(
                   path,
                   "external32",
                   MPI_COMM_SELF,
@@ -410,7 +410,7 @@ main(int argc, char* argv[]) {
                   read_pgrid,
                   max_buffer_size,
                   false);
-              while (reader != Reader<std::complex<float> >::end()) {
+              while (reader != CxFltReader::end()) {
                 auto& array = *reader;
                 if (array.buffer()) {
                   if (cb(array, output))
