@@ -890,10 +890,12 @@ protected:
             auto i1 = buffer_indexer->offset_of_(index).value();
             --index[ip->axis];
             if (debug_log) {
-              std::clog << "(" << rank << ") "
-                        << mscol_nickname(ip->axis)
-                        << " dv stride " << i1 - i0
-                        << std::endl;
+              std::ostringstream oss;
+              oss << "(" << rank << ") "
+                  << mscol_nickname(ip->axis)
+                  << " dv stride " << i1 - i0
+                  << std::endl;
+              std::clog << oss.str();
             }
             auto stride = (i1 - i0) * value_size;
             MPI_Aint lb = 0, extent = 0;
@@ -918,9 +920,11 @@ protected:
       if (debug_log) {
         MPI_Count size;
         MPI_Type_size_x(*result_dt, &size);
-        std::clog << "(" << rank << ") buffer datatype size "
-                  << size / value_size
-                  << ", count " << result_dt_count << std::endl;
+        std::ostringstream oss;
+        oss << "(" << rank << ") buffer datatype size "
+            << size / value_size
+            << ", count " << result_dt_count << std::endl;
+        std::clog << oss.str();
       }
       if (*result_dt != value_datatype)
         MPI_Type_commit(result_dt.get());
@@ -1009,10 +1013,12 @@ protected:
         MPI_Type_get_extent(*result, &lb, &extent);
         MPI_Count size;
         MPI_Type_size_x(*result, &size);
-        std::clog << "(" << rank << ") fileview datatype size "
-                  << size / value_extent
-                  << ", extent " << lb << " " << extent
-                  << std::endl;
+        std::ostringstream oss;
+        oss << "(" << rank << ") fileview datatype size "
+            << size / value_extent
+            << ", extent " << lb << " " << extent
+            << std::endl;
+        std::clog << oss.str();
       }
       return result;
     };
@@ -1051,7 +1057,8 @@ protected:
             });
           oss << "]";
         });
-      std::clog << oss.str() << std::endl;
+      oss << std::endl;
+      std::clog << oss.str();
     }
 
     std::shared_ptr<const MPI_Datatype> dt;
