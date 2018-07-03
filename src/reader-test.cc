@@ -140,7 +140,7 @@ checkit(
         try {
           auto offset = full_array_indexer->offset_of(coords_map);
           if (offset)
-            full_array[offset.value()] = buffer[n];
+            full_array[offset.value()] = (isnan(buffer[n]) ? 0.0 : buffer[n]);
           size_t tim, spw, bal, ch, pol;
           decode_vis(buffer[n++], tim, spw, bal, ch, pol);
           if (coords_map[MSColumns::time] != tim
@@ -538,8 +538,7 @@ main(int argc, char* argv[]) {
       ColumnAxis<MSColumns, MSColumns::polarization_product>(npol)
       };
 
-  size_t max_buffer_length =
-    ntim * nspw * nbal * nch * npol;
+  size_t max_buffer_length = ntim * nspw * nbal * nch * npol;
 
   size_t max_buffer_size = max_buffer_length * sizeof(complex<float>);
 
