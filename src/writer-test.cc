@@ -26,7 +26,9 @@ constexpr auto nbits_spw = 2;
 constexpr auto nbal = 3 /*6*/;
 constexpr auto nbits_bal = 3;
 constexpr auto nch = 13;
-constexpr auto nbits_ch = 4;
+// nbits_ch is larger than ceil(log2(13)) since one of the test process grids
+// distributes the elements such that the effective nch is 18
+constexpr auto nbits_ch = 5;
 constexpr auto npol = 2;
 constexpr auto nbits_pol = 1;
 
@@ -66,12 +68,20 @@ decode_vis(
 }
 
 bool
+isnan(const complex<float>& x) {
+  return isnan(x.real()) || isnan(x.imag());
+}
+
+bool
 checkit(
   const complex<float>* buffer,
   size_t& n,
   vector<pair<MSColumns, size_t> >& coords,
+  vector<complex<float> >& full_array,
+  shared_ptr<ArrayIndexer<MSColumns> >& full_array_indexer,
   vector<IndexBlockSequence<MSColumns> >::const_iterator begin,
   vector<IndexBlockSequence<MSColumns> >::const_iterator end,
+  bool& index_out_of_range,
   ostringstream& output)
   __attribute__((unused));
 
@@ -80,8 +90,11 @@ checkit(
   const complex<float>* buffer,
   size_t& n,
   vector<pair<MSColumns, size_t> >& coords,
+  vector<complex<float> >& full_array,
+  shared_ptr<ArrayIndexer<MSColumns> >& full_array_indexer,
   vector<IndexBlockSequence<MSColumns> >::const_iterator begin,
   vector<IndexBlockSequence<MSColumns> >::const_iterator end,
+  bool& index_out_of_range,
   ostringstream& output) {
 
   auto next = begin;
@@ -91,7 +104,18 @@ checkit(
     for (auto& b : begin->m_blocks)
       for (size_t i = 0; i < b.m_length; ++i) {
         coords.emplace_back(begin->m_axis, b.m_index + i);
-        result = checkit(buffer, n, coords, next, end, output) && result;
+        result =
+          checkit(
+            buffer,
+            n,
+            coords,
+            full_array,
+            full_array_indexer,
+            next,
+            end,
+            index_out_of_range,
+            output)
+          && result;
         coords.pop_back();
       }
   } else {
@@ -100,34 +124,41 @@ checkit(
         coords.emplace_back(begin->m_axis, b.m_index + i);
         unordered_map<MSColumns, size_t> coords_map(
           std::begin(coords), std::end(coords));
-        size_t tim, spw, bal, ch, pol;
-        decode_vis(buffer[n++], tim, spw, bal, ch, pol);
-        if (coords_map[MSColumns::time] != tim
-            || coords_map[MSColumns::spectral_window] != spw
-            || coords_map[MSColumns::baseline] != bal
-            || coords_map[MSColumns::channel] != ch
-            || coords_map[MSColumns::polarization_product] != pol) {
-          result = false;
-          unordered_map<MSColumns, size_t> value_map {
-            {MSColumns::time, tim},
-            {MSColumns::spectral_window, spw},
-            {MSColumns::baseline, bal},
-            {MSColumns::channel, ch},
-            {MSColumns::polarization_product, pol}
-          };
-          output << "error at ("
-                 << coords[0].second << ","
-                 << coords[1].second << ","
-                 << coords[2].second << ","
-                 << coords[3].second << ","
-                 << coords[4].second << "); "
-                 << "value: ("
-                 << value_map[coords[0].first] << ","
-                 << value_map[coords[1].first] << ","
-                 << value_map[coords[2].first] << ","
-                 << value_map[coords[3].first] << ","
-                 << value_map[coords[4].first] << ")"
-                 << endl;
+        try {
+          auto offset = full_array_indexer->offset_of(coords_map);
+          if (offset)
+            full_array[offset.value()] = (isnan(buffer[n]) ? 0.0 : buffer[n]);
+          size_t tim, spw, bal, ch, pol;
+          decode_vis(buffer[n++], tim, spw, bal, ch, pol);
+          if (coords_map[MSColumns::time] != tim
+              || coords_map[MSColumns::spectral_window] != spw
+              || coords_map[MSColumns::baseline] != bal
+              || coords_map[MSColumns::channel] != ch
+              || coords_map[MSColumns::polarization_product] != pol) {
+            result = false;
+            unordered_map<MSColumns, size_t> value_map {
+              {MSColumns::time, tim},
+              {MSColumns::spectral_window, spw},
+              {MSColumns::baseline, bal},
+              {MSColumns::channel, ch},
+              {MSColumns::polarization_product, pol}
+            };
+            output << "error at ("
+                   << coords[0].second << ","
+                   << coords[1].second << ","
+                   << coords[2].second << ","
+                   << coords[3].second << ","
+                   << coords[4].second << "); "
+                   << "value: ("
+                   << value_map[coords[0].first] << ","
+                   << value_map[coords[1].first] << ","
+                   << value_map[coords[2].first] << ","
+                   << value_map[coords[3].first] << ","
+                   << value_map[coords[4].first] << ")"
+                   << endl;
+          }
+        } catch (const out_of_range& oor) {
+          index_out_of_range = true;
         }
         coords.pop_back();
       }
@@ -136,22 +167,16 @@ checkit(
 }
 
 bool
-cb(const CxFltMSArray& array, ostringstream& output) {
+cb(
+  const CxFltMSArray& array,
+  vector<complex<float> >& full_array,
+  shared_ptr<ArrayIndexer<MSColumns> >& full_array_indexer,
+  bool& index_out_of_range,
+  ostringstream& output) {
 
   if (!array.buffer())
     return false;
   auto indexes = array.blocks();
-
-  output << "next buffer..." << endl;
-  for (auto& seq : indexes) {
-    output << mscol_nickname(seq.m_axis) << ": [";
-    const char *sep = "";
-    for (auto& block : seq.m_blocks) {
-      output << sep << "(" << block.m_index << "," << block.m_length << ")";
-      sep = ", ";
-    }
-    output << "]" << endl;
-  }
 
   size_t n = 0;
   vector<pair<MSColumns, size_t> > coords;
@@ -160,11 +185,12 @@ cb(const CxFltMSArray& array, ostringstream& output) {
       array.buffer().value(),
       n,
       coords,
+      full_array,
+      full_array_indexer,
       begin(indexes),
       end(indexes),
+      index_out_of_range,
       output);
-  if (result)
-    output << "no errors" << endl;
   return result;
 }
 
@@ -273,8 +299,9 @@ main(int argc, char* argv[]) {
 
   vector<MSColumns> read_order = ms_axis_orders[0];
 
-  size_t max_buffer_size =
-    ntim * nspw * nbal * nch * npol * sizeof(complex<float>);
+  size_t max_buffer_length = ntim * nspw * nbal * nch * npol;
+
+  size_t max_buffer_size = max_buffer_length * sizeof(complex<float>);
 
   vector<size_t> buffer_sizes = {
     max_buffer_size,
@@ -283,12 +310,12 @@ main(int argc, char* argv[]) {
     npol * nch * sizeof(complex<float>)
   };
 
-  unordered_map<MSColumns, GridDistribution> pgrid;
+  // unordered_map<MSColumns, GridDistribution> pgrid;
 
-  // unordered_map<MSColumns, GridDistribution> pgrid = {
-  //   {MSColumns::spectral_window, GridDistributionFactory::cyclic(1, 2) },
-  //   {MSColumns::channel, GridDistributionFactory::cyclic(3, 2) }
-  // };
+  unordered_map<MSColumns, GridDistribution> pgrid = {
+    {MSColumns::spectral_window, GridDistributionFactory::cyclic(1, 2) },
+    {MSColumns::channel, GridDistributionFactory::cyclic(3, 2) }
+  };
 
   unordered_map<MSColumns, GridDistribution> read_pgrid;
 
@@ -321,7 +348,7 @@ main(int argc, char* argv[]) {
             ColumnAxisBase<MSColumns>(static_cast<unsigned>(ms_top));
           if (pgrid.count(ms_top) > 0) {
             auto period = pgrid[ms_top](std::nullopt)->period().value();
-            dims[ms_top] = ceil(dims[ms_top], period) * period; 
+            dims[ms_top] = ceil(dims[ms_top], period) * period;
           }
         } else {
           amode = AMode::ReadWrite;
@@ -372,9 +399,11 @@ main(int argc, char* argv[]) {
               bool done = false;
               auto indices = writer.indices();
               assert(indices.size() == dims.size() || indices.size() == 0);
-              if (amode == AMode::ReadWrite
-                  || indices.size() == 0
-                  || indices[0].min_index() < dims[ms_top]) {
+              bool inc =
+                amode == AMode::ReadWrite
+                || indices.size() == 0
+                || indices[0].min_index() < dims[ms_top];
+              if (inc) {
                 if (writer.buffer_length() > 0) {
                   CxFltMSArray array(writer.buffer_length());
                   write_buffer(array.buffer(), indices);
@@ -397,6 +426,20 @@ main(int argc, char* argv[]) {
                 ColumnAxisBase<MSColumns>(
                   static_cast<unsigned>(ms_top),
                   ms_top_len);
+
+            auto full_array_idx =
+              ArrayIndexer<MSColumns>::of(ArrayOrder::row_major, ms_shape);
+            vector<complex<float> > full_array(
+              accumulate(
+                begin(ms_shape),
+                end(ms_shape),
+                1,
+                [](auto& acc, auto& ax) {
+                  return acc * ax.length().value();
+                }));
+            fill(begin(full_array), end(full_array), NAN);
+            bool index_oor = false;
+
             {
               auto reader =
                 CxFltReader::begin(
@@ -410,10 +453,16 @@ main(int argc, char* argv[]) {
                   read_pgrid,
                   max_buffer_size,
                   false);
+
               while (reader != CxFltReader::end()) {
                 auto& array = *reader;
                 if (array.buffer()) {
-                  if (cb(array, output))
+                  if (cb(
+                        array,
+                        full_array,
+                        full_array_idx,
+                        index_oor,
+                        output))
                     ++reader;
                   else
                     reader.interrupt();
@@ -424,6 +473,18 @@ main(int argc, char* argv[]) {
               }
             }
             cout << output.str();
+            if (index_oor)
+              cout << "---- error: out of range array indexes ---- "
+                   << endl;
+            size_t num_missing =
+              count_if(
+                begin(full_array),
+                end(full_array),
+                [](auto& c) { return isnan(c); });
+            if (num_missing > 0)
+              cout << "++++ error: "
+                   << num_missing
+                   << " missing elements ++++" << endl;
             remove(path.c_str());
           }
         } catch (...) {
