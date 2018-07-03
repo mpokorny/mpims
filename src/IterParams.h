@@ -121,7 +121,8 @@ struct IterParams {
       && within_fileview == rhs.within_fileview
       && buffer_capacity == rhs.buffer_capacity
       && rank == rhs.rank
-      && *data_distribution == *rhs.data_distribution);
+      && (data_distribution.get() == rhs.data_distribution.get()
+          || *data_distribution == *rhs.data_distribution));
   }
 
   bool
