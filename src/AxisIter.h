@@ -126,12 +126,20 @@ public:
 
   bool
   operator==(const AxisIter& rhs) const {
-    return *m_params == *rhs.m_params && m_index == rhs.m_index;
+    return (m_params.get() == rhs.m_params.get() || *m_params == *rhs.m_params)
+      && m_index == rhs.m_index;
   }
 
   bool
   operator!=(const AxisIter& rhs) const {
     return !operator==(rhs);
+  }
+
+  bool
+  is_less_than(const AxisIter& rhs) const {
+    if (m_params.get() != rhs.m_params.get() && *m_params != *rhs.m_params)
+      throw std::domain_error("incomparable AxisIters");
+    return m_index < rhs.m_index;
   }
 
 protected:
