@@ -29,11 +29,6 @@
 #include <ReaderBase.h>
 #include <MemoFn.h>
 
-// TODO: unless we make a single, large contiguous datatype for the fileview,
-// appending to the file fails in some cases...why?
-// #define MPIMS_READER_BIG_CONTIGUOUS_COUNT 10000
-#undef MPIMS_READER_BIG_CONTIGUOUS_COUNT
-
 namespace std {
 
 template<>
@@ -120,7 +115,7 @@ public:
 
     advance_to_next_buffer(m_traversal_state, handles->file);
     m_ms_array = read_buffer(m_traversal_state, m_readahead, handles->file);
-    if (!m_traversal_state.at_end() && m_readahead)
+    if (!m_traversal_state.eof() && m_readahead)
       start_next();
   }
 
@@ -393,12 +388,6 @@ public:
   }
 
 protected:
-
-  struct SetFileviewArgs {
-    std::unordered_map<MSColumns, std::vector<finite_block_t> > blocks_map;
-    MPI_Datatype datatype;
-    MPI_File file;
-  };
 
   static Reader
   wbegin(
@@ -742,7 +731,7 @@ protected:
       if (handles->comm == MPI_COMM_NULL)
         return;
     }
-    if (cont && at_end())
+    if (cont && m_traversal_state.eof())
       throw std::out_of_range("Reader cannot be advanced: at end");
 
     if (m_readahead) {
@@ -771,6 +760,7 @@ protected:
       return;
 
     m_next_traversal_state = m_traversal_state;
+    m_next_traversal_state.advance_to_buffer_end(false);
 
     bool eof = m_next_traversal_state.eof() || !m_ms_array.buffer();
     std::array<bool, 2> tests{ m_next_traversal_state.cont, eof };
@@ -995,17 +985,6 @@ protected:
               debug_log);
         });
 
-#ifdef MPIMS_READER_BIG_CONTIGUOUS_COUNT
-      if (last_unbounded) {
-        auto dt = std::move(result);
-        result = datatype();
-        MPI_Type_contiguous(
-          MPIMS_READER_BIG_CONTIGUOUS_COUNT,
-          *dt,
-          result.get());
-      }
-#endif
-
       MPI_Type_commit(result.get());
 
       if (debug_log) {
@@ -1067,13 +1046,13 @@ protected:
 
     std::unique_ptr<T> buffer;
     if (blocks.size() > 0) {
-      if (!traversal_state.at_end())
+      if (!traversal_state.eof())
         buffer.reset(reinterpret_cast<T *>(::operator new(m_buffer_size)));
     } else {
       count = 0;
     }
 
-    if (traversal_state.at_end()) {
+    if (traversal_state.eof()) {
 
       MPI_Status status;
       return MSArray<T>(
@@ -1086,13 +1065,9 @@ protected:
         (m_debug_log ? std::make_optional(m_rank) : std::nullopt)); 
 
     } else {
-      set_deferred_fileview();
 
       MPI_Offset start;
-      if (count > 0)
-        MPI_File_get_position(file, &start);
-      else
-        start = 0;
+      MPI_File_get_position(file, &start);
 
       if (!nonblocking) {
         MPI_Status status;
@@ -1123,7 +1098,10 @@ protected:
   }
 
   void
-  set_fileview(const SetFileviewArgs& args) const {
+  set_fileview(
+    const std::unordered_map<MSColumns, std::vector<finite_block_t> >& blocks_map,
+    MPI_Datatype datatype,
+    MPI_File file) const {
 
     // assume that m_mtx and m_mpi_state.handles() are locked
 
@@ -1131,8 +1109,8 @@ protected:
     std::for_each(
       std::begin(*m_iter_params),
       std::end(*m_iter_params),
-      [&data_index, &args](const auto& ip) {
-        auto blks = args.blocks_map.at(ip.axis);
+      [&](const auto& ip) {
+        auto blks = blocks_map.at(ip.axis);
         if (ip.within_fileview || blks.size() == 0)
           data_index[ip.axis] = 0;
         else
@@ -1157,20 +1135,12 @@ protected:
     m_next_ms_array.wait();
 
     MPI_File_set_view(
-      args.file,
+      file,
       offset * m_value_extent,
       value_datatype,
-      args.datatype,
+      datatype,
       m_datarep.c_str(),
       MPI_INFO_NULL);
-  }
-
-  void
-  set_deferred_fileview() const {
-    if (m_deferred_fileview_args) {
-      set_fileview(m_deferred_fileview_args.value());
-      m_deferred_fileview_args.reset();
-    }
   }
 
   void
@@ -1184,22 +1154,17 @@ protected:
       m_inner_fileview_axis,
       [this, &traversal_state, &file]() {
 
-        auto args = SetFileviewArgs {
+        set_fileview(
           traversal_state.blocks_map(),
           *traversal_state.fileview_datatype(m_inner_fileview_axis),
-          file
-        };
-
-        if (traversal_state.at_end())
-          m_deferred_fileview_args = std::make_optional(args);
-        else
-          set_fileview(args);
+          file);
       });
   }
 
   void
   extend() {
     std::lock_guard<decltype(m_mtx)> lock(m_mtx);
+    m_traversal_state.advance_to_buffer_end(true);
     m_traversal_state.global_eof = false;
   }
 
@@ -1212,7 +1177,6 @@ protected:
     // assume that m_mtx is locked
     auto blocks = sorted_blocks(traversal_state);
     auto result = read_arrays(traversal_state, nonblocking, blocks, file);
-    traversal_state.advance_to_buffer_end();
     return result;
   }
 
@@ -1286,8 +1250,6 @@ private:
   mutable MSArray<T> m_next_ms_array;
 
   mutable std::recursive_mutex m_mtx;
-
-  mutable std::optional<SetFileviewArgs> m_deferred_fileview_args;
 };
 
 template <typename T>

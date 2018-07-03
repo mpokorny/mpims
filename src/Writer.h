@@ -105,38 +105,10 @@ public:
     std::optional<MPI_Offset> offset =
       m_array ? getv().offset() : std::nullopt;
 
-    if (m_reader.m_debug_log) {
-      auto blocks = indices();
-      std::ostringstream oss;
-      oss << "(" << m_reader.m_rank << ") write ";
-      const char* sep0 = "";
-      std::for_each(
-        std::begin(blocks),
-        std::end(blocks),
-        [&sep0, &oss](auto& ibs) {
-          oss << sep0
-              << mscol_nickname(ibs.m_axis) << ": [";
-          sep0 = "; ";
-          const char *sep1 = "";
-          std::for_each(
-            std::begin(ibs.m_blocks),
-            std::end(ibs.m_blocks),
-            [&sep1, &oss](auto& b) {
-              oss << sep1 << "(" << b.m_index << "," << b.m_length << ")";
-              sep1 = ",";
-            });
-          oss << "]";
-        });
-      oss << " at "
-          << (offset ? std::to_string(offset.value()) : "EOF");
-      oss << std::endl;
-      std::clog << oss.str();
-    }
-
-    m_reader.extend();
-    m_reader.set_deferred_fileview();
     if (offset)
       MPI_File_seek(handles->file, offset.value(), MPI_SEEK_SET);
+    if (m_reader.m_traversal_state.eof())
+      m_reader.extend();
     std::shared_ptr<const MPI_Datatype> dt;
     unsigned count;
     std::tie(dt, count) = m_reader.m_traversal_state.buffer_datatype();
@@ -147,6 +119,37 @@ public:
     } else {
       buff = m_array.value().buffer().value();
     }
+
+    if (m_reader.m_debug_log) {
+      auto blocks = indices();
+      std::ostringstream oss;
+      oss << "(" << m_reader.m_rank << ") write ";
+      if (count > 0 && buff) {
+        const char* sep0 = "";
+        std::for_each(
+          std::begin(blocks),
+          std::end(blocks),
+          [&sep0, &oss](auto& ibs) {
+            oss << sep0
+                << mscol_nickname(ibs.m_axis) << ": [";
+            sep0 = "; ";
+            const char *sep1 = "";
+            std::for_each(
+              std::begin(ibs.m_blocks),
+              std::end(ibs.m_blocks),
+              [&sep1, &oss](auto& b) {
+                oss << sep1 << "(" << b.m_index << "," << b.m_length << ")";
+                sep1 = ",";
+              });
+            oss << "]";
+          });
+      }
+      oss << " at "
+          << (offset ? std::to_string(offset.value()) : "EOF");
+      oss << std::endl;
+      std::clog << oss.str();
+    }
+
     MPI_Status status;
     MPI_File_write_all(handles->file, buff, count, *dt, &status);
     int st_count;

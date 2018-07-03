@@ -60,8 +60,36 @@ struct TraversalState {
     }
 
     m_axis_iters.emplace_back(this->iter_params(0), m_num_iterations[0], true);
-    if (m_axis_iters.front().axis() == outer_ms_axis)
-      initial_outer_length = outer_ms_length;
+
+    // determine AxisIter value at end of MS
+    m_eof_axis_iters.emplace_back(this->iter_params(0), std::nullopt, true);
+    AxisIter& ai = m_eof_axis_iters.front();
+    if (m_num_iterations[0]) {
+      // simple case, where there are no axes of indeterminate length
+      for (std::size_t i = 0; i < m_num_iterations[0].value(); ++i)
+        ai.take();
+    } else {
+      // top level MS axis has indeterminate length, iterate until we get a top
+      // level block that exceeds known current MS size
+      std::size_t nit = 0;
+      auto blks = &ai.next_blocks();
+      while (blks->size() > 0 && std::get<0>((*blks)[0]) < outer_ms_length) {
+        ai.take();
+        blks = &ai.next_blocks();
+        ++nit;
+      }
+      // equalize iteration over blocks across ranks
+      std::size_t max_nit;
+      MPI_Allreduce(
+        &max_nit,
+        &nit,
+        1,
+        MPIMS_SIZE_T,
+        MPI_MAX,
+        comm);
+      while (nit++ < max_nit)
+        ai.take();
+    }
     cont = true;
   }
 
@@ -73,6 +101,7 @@ struct TraversalState {
     , m_index_blocks(other.m_index_blocks)
     , m_iter_params(other.m_iter_params)
     , m_axis_iters(other.m_axis_iters)
+    , m_eof_axis_iters(other.m_eof_axis_iters)
     , m_buffer_datatypes(other.m_buffer_datatypes)
     , m_fileview_datatypes(other.m_fileview_datatypes)
     , m_num_iterations(other.m_num_iterations) {
@@ -86,6 +115,7 @@ struct TraversalState {
     , m_index_blocks(std::move(other).m_index_blocks)
     , m_iter_params(std::move(other).m_iter_params)
     , m_axis_iters(std::move(other).m_axis_iters)
+    , m_eof_axis_iters(std::move(other).m_eof_axis_iters)
     , m_buffer_datatypes(other.m_buffer_datatypes)
     , m_fileview_datatypes(other.m_fileview_datatypes)
     , m_num_iterations(std::move(other).m_num_iterations) {
@@ -109,6 +139,7 @@ struct TraversalState {
     m_index_blocks = std::move(rhs).m_index_blocks;
     m_iter_params = std::move(rhs).m_iter_params;
     m_axis_iters = std::move(rhs).m_axis_iters;
+    m_eof_axis_iters = std::move(rhs).m_eof_axis_iters;
     m_buffer_datatypes = rhs.m_buffer_datatypes;
     m_fileview_datatypes = rhs.m_fileview_datatypes;
     m_num_iterations = std::move(rhs).m_num_iterations;
@@ -118,18 +149,23 @@ struct TraversalState {
   //EOF condition
   bool
   eof() const {
-    if (m_axis_iters.empty() || global_eof)
-      return true;
-    if (m_axis_iters.size() != 1)
-      return false;
     return
-      map(
-        initial_outer_length,
-        [&](auto iol) {
-          auto next_blocks = m_axis_iters.front().next_blocks();
-          return (next_blocks.size() == 0
-                  || std::get<0>(next_blocks[0]) >= iol);
-        }).value_or(false);
+      m_axis_iters.empty()
+      || global_eof
+      || !std::lexicographical_compare(
+        std::begin(m_axis_iters),
+        std::end(m_axis_iters),
+        std::begin(m_eof_axis_iters),
+        std::end(m_eof_axis_iters),
+        [](auto& ai0, auto& ai1) {
+          // note that AxisIter::is_less_than() actually does _not_ define a
+          // strict weak ordering on AxisIters as required for a c++ Compare
+          // function; however, by restricting the comparison to AxisIter values
+          // at equal depths in m_axis_iters and m_eof_axis_iters, which will
+          // have equivalent (or likely share the same) AxisIter::m_params
+          // (IterParams) values, the method does define a strict weak ordering
+          return ai0.is_less_than(ai1);
+        });
   };
 
   bool
@@ -255,9 +291,22 @@ struct TraversalState {
   }
 
   void
-  advance_to_buffer_end() {
-    while (!m_axis_iters.empty() && m_axis_iters.back().at_end())
-      m_axis_iters.pop_back();
+  advance_to_buffer_end(bool eof_iters) {
+    std::deque<AxisIter>* iters;
+    if (eof_iters) {
+      m_eof_axis_iters = m_axis_iters;
+      iters = &m_eof_axis_iters;
+    } else {
+      iters = &m_axis_iters;
+    }
+    while (!iters->empty()) {
+      AxisIter& ai = iters->back();
+      ai.take();
+      if (ai.at_end())
+        iters->pop_back();
+      else
+        break;
+    }
   }
 
   template <typename F>
@@ -269,7 +318,7 @@ struct TraversalState {
       MSColumns axis = axis_iter.axis();
       if (!axis_iter.at_end()) {
         bool at_data = axis_iter.at_data();
-        m_index_blocks[axis] = axis_iter.take();
+        m_index_blocks[axis] = axis_iter.next_blocks();
         auto depth = m_axis_iters.size();
         if (axis_iter.at_buffer()) {
           // fill all lower level m_index_blocks values
@@ -313,6 +362,7 @@ protected:
     swap(m_index_blocks, other.m_index_blocks);
     swap(m_iter_params, other.m_iter_params);
     swap(m_axis_iters, other.m_axis_iters);
+    swap(m_eof_axis_iters, other.m_eof_axis_iters);
     swap(m_buffer_datatypes, other.m_buffer_datatypes);
     swap(m_fileview_datatypes, other.m_fileview_datatypes);
     swap(m_num_iterations, other.m_num_iterations);
@@ -330,6 +380,8 @@ private:
   // stack of AxisIters to maintain axis iteration indexes
   std::deque<AxisIter> m_axis_iters;
 
+  std::deque<AxisIter> m_eof_axis_iters;
+
   std::function<
     const std::tuple<std::shared_ptr<const MPI_Datatype>, unsigned>&(
       const std::size_t&)> m_buffer_datatypes;
@@ -345,8 +397,8 @@ private:
     MPI_Comm comm,
     const std::shared_ptr<const std::vector<IterParams> >& iter_params) {
 
-    // type bool won't work for inf_nit, since vector<bool> is specialized such
-    // that accessing the data for MPI communication won't work
+    // type bool doesn't work for inf_nit, since vector<bool> is specialized
+    // such that accessing the data for MPI communication won't work
     std::vector<unsigned char> inf_nit;
     std::vector<std::size_t> nit;
     inf_nit.reserve(iter_params->size());
