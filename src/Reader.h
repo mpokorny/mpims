@@ -971,7 +971,7 @@ protected:
 
           std::size_t len =
             ip->full_fv_axis
-            ? ip->axis_length.value_or(ip->period().value())
+            ? (ip->axis_length ? ip->axis_length.value() : ip->period().value())
             : std::max(
               static_cast<decltype(ip->buffer_capacity)>(1),
               ip->buffer_capacity);
