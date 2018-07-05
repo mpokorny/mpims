@@ -217,15 +217,17 @@ public:
     }
     auto next_blk = st.block_index + 1;
     auto next_blk_offset = st.block_offset;
-    std::size_t next_b0;
-    std::optional<std::size_t> next_blen;
-    std::tie(next_b0, next_blen) = st.blocks[next_blk];
-    if (next_blen == 0) {
-      next_blk_offset += next_b0;
-      if (!st.axis_length
-          || (next_blk_offset + std::get<0>(st.blocks[0])
-              < st.axis_length.value()))
-        next_blk = 0;
+    if (next_blk < st.blocks.size()) {
+      std::size_t next_b0;
+      std::optional<std::size_t> next_blen;
+      std::tie(next_b0, next_blen) = st.blocks[next_blk];
+      if (next_blen == 0) {
+        next_blk_offset += next_b0;
+        if (!st.axis_length
+            || (next_blk_offset + std::get<0>(st.blocks[0])
+                < st.axis_length.value()))
+          next_blk = 0;
+      }
     }
     return std::make_tuple(
       State{st.blocks, st.axis_length, next_blk, next_blk_offset},
