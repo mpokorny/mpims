@@ -142,7 +142,7 @@ struct IterParams {
         auto iter = begin();
         while (!iter->at_end()) {
           ++n;
-          iter->take_blocked(buffer_capacity);
+          iter->take(buffer_capacity);
         }
         result = n;
       } else {
