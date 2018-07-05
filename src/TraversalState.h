@@ -84,8 +84,8 @@ struct TraversalState {
       // equalize iteration over blocks across ranks
       std::size_t max_nit;
       MPI_Allreduce(
-        &max_nit,
         &nit,
+        &max_nit,
         1,
         MPIMS_SIZE_T,
         MPI_MAX,
