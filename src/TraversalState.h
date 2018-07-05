@@ -33,7 +33,6 @@ struct TraversalState {
   TraversalState(
     MPI_Comm comm,
     const std::shared_ptr<const std::vector<IterParams> >& iter_params,
-    MSColumns outer_ms_axis,
     std::size_t outer_ms_length,
     MSColumns outer_full_array_axis,
     const std::function<

@@ -712,7 +712,6 @@ protected:
       TraversalState(
         reduced_comm,
         iter_params,
-        ms_shape[0].id(),
         ((reduced_comm != MPI_COMM_NULL)
          ? ms_shape[0].length().value_or(top_len)
          : 0),
