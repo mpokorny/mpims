@@ -47,6 +47,10 @@ struct TraversalState {
     , m_buffer_datatypes(buffer_datatypes)
     , m_fileview_datatypes(fileview_datatypes) {
 
+    if (comm == MPI_COMM_NULL) {
+      global_eof = true;
+      return;
+    }
     global_eof = false;
     m_num_iterations = max_iterations(comm, m_iter_params);
 
