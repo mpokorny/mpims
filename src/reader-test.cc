@@ -542,7 +542,7 @@ main(int argc, char* argv[]) {
 
   size_t max_buffer_size = max_buffer_length * sizeof(complex<float>);
 
-  vector<size_t> buffer_sizes = {
+  vector<size_t> buffer_sizes {
     max_buffer_size,
     max_buffer_size / ntim,
     max_buffer_size / nch,
@@ -560,17 +560,33 @@ main(int argc, char* argv[]) {
         MSColumns::time, MSColumns::baseline, MSColumns::channel}
   };
 
-  // unordered_map<MSColumns, GridDistribution> pgrid;
+  unordered_map<MSColumns, GridDistribution> pgrid1;
 
-  unordered_map<MSColumns, GridDistribution> pgrid = {
+  unordered_map<MSColumns, GridDistribution> pgrid2 {
+    {MSColumns::spectral_window, GridDistributionFactory::block_sequence(
+        {{{0, 1}, {3, 1}}, {{1, 2}}})}
+  };
+
+  unordered_map<MSColumns, GridDistribution> pgrid4 {
     {MSColumns::spectral_window, GridDistributionFactory::cyclic(1, 2) },
     {MSColumns::channel, GridDistributionFactory::cyclic(3, 2) }
+  };
+
+  unordered_map<int, unordered_map<MSColumns, GridDistribution> > pgrids {
+    {1, pgrid1},
+    {2, pgrid2},
+    {4, pgrid4}
   };
 
   int my_rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
   int world_size;
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+  int grid_size = world_size;
+  auto pgrid = pgrids.find(grid_size);
+  while (pgrid == end(pgrids))
+    pgrid = pgrids.find(--grid_size);
 
   auto full_array_idx =
     ArrayIndexer<MSColumns>::of(ArrayOrder::row_major, ms_shape);
