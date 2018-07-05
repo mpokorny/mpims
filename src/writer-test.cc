@@ -310,11 +310,22 @@ main(int argc, char* argv[]) {
     npol * nch * sizeof(complex<float>)
   };
 
-  // unordered_map<MSColumns, GridDistribution> pgrid;
+  unordered_map<MSColumns, GridDistribution> pgrid1;
 
-  unordered_map<MSColumns, GridDistribution> pgrid = {
+  unordered_map<MSColumns, GridDistribution> pgrid2 {
+    {MSColumns::spectral_window, GridDistributionFactory::block_sequence(
+        {{{0, 1}, {3, 1}, {4, 0}}, {{1, 2}, {4, 0}}})}
+  };
+
+  unordered_map<MSColumns, GridDistribution> pgrid4 = {
     {MSColumns::spectral_window, GridDistributionFactory::cyclic(1, 2) },
     {MSColumns::channel, GridDistributionFactory::cyclic(3, 2) }
+  };
+
+  unordered_map<int, unordered_map<MSColumns, GridDistribution> > pgrids {
+    {1, pgrid1},
+    {2, pgrid2},
+    {4, pgrid4}
   };
 
   unordered_map<MSColumns, GridDistribution> read_pgrid;
@@ -323,6 +334,12 @@ main(int argc, char* argv[]) {
   MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
   int world_size;
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+  int grid_size = world_size;
+  auto pg = pgrids.find(grid_size);
+  while (pg == end(pgrids))
+    pg = pgrids.find(--grid_size);
+  auto pgrid = pg->second;
 
   for (auto& msao : ms_axis_orders) {
     for (auto& bs : buffer_sizes) {
@@ -346,10 +363,6 @@ main(int argc, char* argv[]) {
           amode = AMode::WriteOnly;
           ms_shape[0] =
             ColumnAxisBase<MSColumns>(static_cast<unsigned>(ms_top));
-          if (pgrid.count(ms_top) > 0) {
-            auto period = pgrid[ms_top](std::nullopt)->period().value();
-            dims[ms_top] = ceil(dims[ms_top], period) * period;
-          }
         } else {
           amode = AMode::ReadWrite;
         }
@@ -403,6 +416,13 @@ main(int argc, char* argv[]) {
               amode == AMode::ReadWrite
               || indices.size() == 0
               || indices[0].min_index() < dims[ms_top];
+            MPI_Allreduce(
+              MPI_IN_PLACE,
+              &inc,
+              1,
+              MPI_CXX_BOOL,
+              MPI_LOR,
+              MPI_COMM_WORLD);
             if (inc) {
               if (writer.buffer_length() > 0) {
                 CxFltMSArray array(writer.buffer_length());
