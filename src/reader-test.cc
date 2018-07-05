@@ -594,110 +594,105 @@ main(int argc, char* argv[]) {
 
   array<bool,2> ms_order{ false, true };
 
-  try {
-    for (auto& mso : ms_order) {
-      for (auto& to : traversal_orders) {
-        for (auto& bs : buffer_sizes) {
-          for (auto& mss : {ms_shape, ms_shape_u}) {
-            if (mss[0].is_indeterminate() && to[0] !=  mss[0].id())
-              continue;
+  for (auto& mso : ms_order) {
+    for (auto& to : traversal_orders) {
+      for (auto& bs : buffer_sizes) {
+        for (auto& mss : {ms_shape, ms_shape_u}) {
+          if (mss[0].is_indeterminate() && to[0] !=  mss[0].id())
+            continue;
 
-            for (size_t i = 0; i < max_buffer_length; ++i)
-              full_array[i] = complex{NAN, NAN};
+          for (size_t i = 0; i < max_buffer_length; ++i)
+            full_array[i] = complex{NAN, NAN};
 
-            ostringstream output;
-            output << "========= traversal_order "
-                   << colnames(to)
-                   << "; buffer_size "
-                   << num_elements(bs)
-                   << (mso ? " (ms order)" : "")
-                   << (mss[0].is_indeterminate()
-                       ? " (unspecified ms length)"
-                       : "")
-                   << " ========="
-                   << endl;
-            auto reader =
-              CxFltReader::begin(
-                argv[1],
-                "native",
-                MPI_COMM_WORLD,
-                MPI_INFO_NULL,
-                mss,
-                to,
-                mso,
-                pgrid,
-                bs,
-                false);
+          ostringstream output;
+          output << "========= traversal_order "
+                 << colnames(to)
+                 << "; buffer_size "
+                 << num_elements(bs)
+                 << (mso ? " (ms order)" : "")
+                 << (mss[0].is_indeterminate()
+                     ? " (unspecified ms length)"
+                     : "")
+                 << " ========="
+                 << endl;
+          auto reader =
+            CxFltReader::begin(
+              argv[1],
+              "native",
+              MPI_COMM_WORLD,
+              MPI_INFO_NULL,
+              mss,
+              to,
+              mso,
+              pgrid->second,
+              bs,
+              false);
 
-            bool index_oor = false;
-            unordered_map<MSColumns, set<size_t> > indexes;
-            while (reader != CxFltReader::end()) {
-              const CxFltMSArray& array = *reader;
-              if (array.buffer()) {
-                if (cb(
-                      array,
-                      full_array,
-                      full_array_idx,
-                      index_oor,
-                      indexes,
-                      output))
-                  ++reader;
-                else
-                  reader.interrupt();
-              } else {
+          bool index_oor = false;
+          unordered_map<MSColumns, set<size_t> > indexes;
+          while (reader != CxFltReader::end()) {
+            const CxFltMSArray& array = *reader;
+            if (array.buffer()) {
+              if (cb(
+                    array,
+                    full_array,
+                    full_array_idx,
+                    index_oor,
+                    indexes,
+                    output))
                 ++reader;
-              }
+              else
+                reader.interrupt();
+            } else {
+              ++reader;
             }
+          }
 
-            merge_full_arrays(
-              full_array_win,
-              my_rank,
-              full_array,
-              max_buffer_length);
+          merge_full_arrays(
+            full_array_win,
+            my_rank,
+            full_array,
+            max_buffer_length);
 
-            bool distribution_ok =
-              check_grid_distribution(pgrid, ms_shape, indexes);
+          bool distribution_ok =
+            check_grid_distribution(pgrid->second, ms_shape, indexes);
 
-            int output_rank = 0;
-            while (output_rank < world_size) {
-              if (output_rank == my_rank) {
-                if (world_size > 1)
-                  cout << "*************** rank "
-                       << my_rank
-                       << " ***************"
+          int output_rank = 0;
+          while (output_rank < world_size) {
+            if (output_rank == my_rank) {
+              if (world_size > 1)
+                cout << "*************** rank "
+                     << my_rank
+                     << " ***************"
+                     << endl;
+              if (index_oor)
+                output << "---- error: out of range array indexes ---- "
                        << endl;
-                if (index_oor)
-                  output << "---- error: out of range array indexes ---- "
-                         << endl;
-                cout << output.str();
-              }
-              ++output_rank;
-              MPI_Barrier(MPI_COMM_WORLD);
+              cout << output.str();
             }
+            ++output_rank;
+            MPI_Barrier(MPI_COMM_WORLD);
+          }
 
-            if (my_rank == 0) {
-              size_t num_missing = 0;
-              for (size_t i = 0; i < max_buffer_length; ++i)
-                if (isnan(full_array[i]))
-                  ++num_missing;
-              if (num_missing > 0)
-                cout << "++++ error: "
-                     << num_missing
-                     << " missing elements ++++" << endl;
-              if (!distribution_ok)
-                cout << "#### error: distribution failure ####" << endl;
-            }
+          if (my_rank == 0) {
+            size_t num_missing = 0;
+            for (size_t i = 0; i < max_buffer_length; ++i)
+              if (isnan(full_array[i]))
+                ++num_missing;
+            if (num_missing > 0)
+              cout << "++++ error: "
+                   << num_missing
+                   << " missing elements ++++" << endl;
+            if (!distribution_ok)
+              cout << "#### error: distribution failure ####" << endl;
           }
         }
       }
     }
-    if (my_rank == 0)
-      remove(argv[1]);
-  } catch (...) {
-    if (my_rank == 0)
-      remove(argv[1]);
-    throw;
   }
+  if (my_rank == 0)
+    remove(argv[1]);
+
   MPI_Win_free(&full_array_win);
   MPI_Finalize();
 

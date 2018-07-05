@@ -375,122 +375,117 @@ main(int argc, char* argv[]) {
           }
           close(fd);
         }
-        try {
-          MPI_Bcast(
-            const_cast<char*>(path.c_str()),
-            path.size(),
-            MPI_CHAR,
-            0,
-            MPI_COMM_WORLD);
+
+        MPI_Bcast(
+          const_cast<char*>(path.c_str()),
+          path.size(),
+          MPI_CHAR,
+          0,
+          MPI_COMM_WORLD);
+
+        {
+          CxFltWriter writer =
+            CxFltWriter::begin(
+              path,
+              "external32",
+              amode,
+              MPI_COMM_WORLD,
+              MPI_INFO_NULL,
+              ms_shape,
+              tvo,
+              pgrid,
+              bs);
+          while (writer != CxFltWriter::end()) {
+            bool done = false;
+            auto indices = writer.indices();
+            assert(indices.size() == dims.size() || indices.size() == 0);
+            bool inc =
+              amode == AMode::ReadWrite
+              || indices.size() == 0
+              || indices[0].min_index() < dims[ms_top];
+            if (inc) {
+              if (writer.buffer_length() > 0) {
+                CxFltMSArray array(writer.buffer_length());
+                write_buffer(array.buffer(), indices);
+                *writer = move(array);
+              }
+              ++writer;
+            } else {
+              done = true;
+            }
+            if (done)
+              writer.interrupt();
+          }
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        // read back
+        if (my_rank == 0) {
+          if (amode == AMode::WriteOnly)
+            ms_shape[0] =
+              ColumnAxisBase<MSColumns>(
+                static_cast<unsigned>(ms_top),
+                ms_top_len);
+
+          auto full_array_idx =
+            ArrayIndexer<MSColumns>::of(ArrayOrder::row_major, ms_shape);
+          vector<complex<float> > full_array(
+            accumulate(
+              begin(ms_shape),
+              end(ms_shape),
+              1,
+              [](auto& acc, auto& ax) {
+                return acc * ax.length().value();
+              }));
+          fill(begin(full_array), end(full_array), NAN);
+          bool index_oor = false;
 
           {
-            CxFltWriter writer =
-              CxFltWriter::begin(
+            auto reader =
+              CxFltReader::begin(
                 path,
                 "external32",
-                amode,
-                MPI_COMM_WORLD,
+                MPI_COMM_SELF,
                 MPI_INFO_NULL,
                 ms_shape,
-                tvo,
-                pgrid,
-                bs);
-            while (writer != CxFltWriter::end()) {
-              bool done = false;
-              auto indices = writer.indices();
-              assert(indices.size() == dims.size() || indices.size() == 0);
-              bool inc =
-                amode == AMode::ReadWrite
-                || indices.size() == 0
-                || indices[0].min_index() < dims[ms_top];
-              if (inc) {
-                if (writer.buffer_length() > 0) {
-                  CxFltMSArray array(writer.buffer_length());
-                  write_buffer(array.buffer(), indices);
-                  *writer = move(array);
-                }
-                ++writer;
-              } else {
-                done = true;
-              }
-              if (done)
-                writer.interrupt(); 
-            }
-          }
-          MPI_Barrier(MPI_COMM_WORLD);
+                read_order,
+                true,
+                read_pgrid,
+                max_buffer_size,
+                false);
 
-          // read back
-          if (my_rank == 0) {
-            if (amode == AMode::WriteOnly)
-              ms_shape[0] =
-                ColumnAxisBase<MSColumns>(
-                  static_cast<unsigned>(ms_top),
-                  ms_top_len);
-
-            auto full_array_idx =
-              ArrayIndexer<MSColumns>::of(ArrayOrder::row_major, ms_shape);
-            vector<complex<float> > full_array(
-              accumulate(
-                begin(ms_shape),
-                end(ms_shape),
-                1,
-                [](auto& acc, auto& ax) {
-                  return acc * ax.length().value();
-                }));
-            fill(begin(full_array), end(full_array), NAN);
-            bool index_oor = false;
-
-            {
-              auto reader =
-                CxFltReader::begin(
-                  path,
-                  "external32",
-                  MPI_COMM_SELF,
-                  MPI_INFO_NULL,
-                  ms_shape,
-                  read_order,
-                  true,
-                  read_pgrid,
-                  max_buffer_size,
-                  false);
-
-              while (reader != CxFltReader::end()) {
-                auto& array = *reader;
-                if (array.buffer()) {
-                  if (cb(
-                        array,
-                        full_array,
-                        full_array_idx,
-                        index_oor,
-                        output))
-                    ++reader;
-                  else
-                    reader.interrupt();
-                }
-                else {
+            while (reader != CxFltReader::end()) {
+              auto& array = *reader;
+              if (array.buffer()) {
+                if (cb(
+                      array,
+                      full_array,
+                      full_array_idx,
+                      index_oor,
+                      output))
                   ++reader;
-                }
+                else
+                  reader.interrupt();
+              }
+              else {
+                ++reader;
               }
             }
-            cout << output.str();
-            if (index_oor)
-              cout << "---- error: out of range array indexes ---- "
-                   << endl;
-            size_t num_missing =
-              count_if(
-                begin(full_array),
-                end(full_array),
-                [](auto& c) { return isnan(c); });
-            if (num_missing > 0)
-              cout << "++++ error: "
-                   << num_missing
-                   << " missing elements ++++" << endl;
-            remove(path.c_str());
           }
-        } catch (...) {
-          if (my_rank == 0)
-            remove(path.c_str());
-          throw;
+          cout << output.str();
+          if (index_oor)
+            cout << "---- error: out of range array indexes ---- "
+                 << endl;
+          size_t num_missing =
+            count_if(
+              begin(full_array),
+              end(full_array),
+              [](auto& c) { return isnan(c); });
+          if (num_missing > 0)
+            cout << "++++ error: "
+                 << num_missing
+                 << " missing elements ++++" << endl;
+          remove(path.c_str());
         }
       }
     }
