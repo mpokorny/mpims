@@ -314,7 +314,8 @@ main(int argc, char* argv[]) {
 
   unordered_map<MSColumns, GridDistribution> pgrid2 {
     {MSColumns::spectral_window, GridDistributionFactory::block_sequence(
-        {{{0, 1}, {3, 1}, {4, 0}}, {{1, 2}, {4, 0}}})}
+        {{{0, 1}, {3, 1}, {4, 0}},
+         {{1, 2}, {4, 0}}})}
   };
 
   unordered_map<MSColumns, GridDistribution> pgrid4 = {
