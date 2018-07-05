@@ -464,7 +464,7 @@ public:
   //
   // * a block of length 0 at some rank is used to indicate the start of a
   //   repetition for that rank (any blocks in the sequence following such a
-  //   block are ignored)
+  //   block are ignored); every rank must declare such a block
   //
   // * an empty 'axis_length' is used to indicate an indefinite axis length
   //
@@ -473,13 +473,25 @@ public:
     const std::vector<std::vector<block_t> >& all_blocks,
     const std::optional<std::size_t>& axis_length) {
 
+    if (std::any_of(
+          std::begin(all_blocks),
+          std::end(all_blocks),
+          [](auto& blks) {
+            return
+              std::none_of(
+                std::begin(blks),
+                std::end(blks),
+                [](auto& blk) { return std::get<1>(blk) == 0; }); 
+          }))
+      throw std::domain_error("invalid, non-repeating block sequence");
+
     return
       GeneratorDataDistribution<BlockSequenceGenerator::State>::make(
         BlockSequenceGenerator::apply,
         BlockSequenceGenerator::initial_states(all_blocks, axis_length),
         BlockSequenceGenerator::period(all_blocks),
         all_blocks.size(),
-        BlockSequenceGenerator::is_unbounded(all_blocks, axis_length));
+        !axis_length);
   }
 
   static std::shared_ptr<const DataDistribution>
