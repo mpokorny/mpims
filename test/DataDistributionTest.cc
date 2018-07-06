@@ -240,6 +240,28 @@ TEST(DataDistribution, Periods) {
   EXPECT_EQ(bs->period(), std::lcm(std::lcm(18, 14), 9));
 }
 
+TEST(DataDistribution, DisjointSelections) {
+
+  const std::size_t block_size = 3, group_size = 2;
+  auto cy =
+    DataDistributionFactory::cyclic(block_size, group_size, 2);
+  EXPECT_TRUE(cy->disjoint_selections());
+
+  const std::vector<std::vector<finite_block_t> > all_blocks0{
+    std::vector<finite_block_t>{{0, 2}, {5, 3}, {12, 1}, {18, 0}},
+      std::vector<finite_block_t>{{2, 2}, {8, 3}, {13, 1}, {18, 0}}};
+  auto bs = DataDistributionFactory::block_sequence(all_blocks0, 1);
+  EXPECT_TRUE(bs->disjoint_selections());
+
+  const std::vector<std::vector<finite_block_t> > all_blocks1{
+    std::vector<finite_block_t>{{0, 2}, {5, 3}, {12, 1}, {18, 0}},
+      std::vector<finite_block_t>{{2, 2}, {7, 3}, {13, 1}, {18, 0}}};
+  bs = DataDistributionFactory::block_sequence(all_blocks1, 18);
+  EXPECT_FALSE(bs->disjoint_selections());
+  EXPECT_TRUE(bs->disjoint_selections(5));
+
+}
+
 int
 main(int argc, char *argv[]) {
 

@@ -10,6 +10,7 @@
 #include <sstream>
 #include <type_traits>
 #include <tuple>
+#include <set>
 #include <vector>
 
 #include <mpims.h>
@@ -223,6 +224,44 @@ public:
   bool
   operator!=(const DataDistribution& rhs) const {
     return !operator==(rhs);
+  }
+
+  bool
+  disjoint_selections(std::optional<std::size_t> limit=std::nullopt) const {
+    std::size_t n = num_uniform_selection_elements();
+    std::vector<std::set<std::size_t> > indices;
+    for (std::size_t rank = 0; rank < m_order; ++rank) {
+      auto is = begin(rank)->take(n);
+      decltype(is)::iterator ise;
+      if (!limit)
+        ise = std::end(is);
+      else
+        ise = std::find_if(
+          std::begin(is),
+          std::end(is),
+          [lim=limit.value()](auto& i){ return i >= lim; });
+      indices.emplace_back(std::begin(is), ise);
+    }
+
+    bool result = true;
+    for (std::size_t r0 = 1; result && r0 < m_order; ++r0)
+      result =
+        std::all_of(
+          std::begin(indices[r0]),
+          std::end(indices[r0]),
+          [&indices, &r0, this](auto& i) {
+            bool res = true;
+            for (std::size_t r1 = 0; res && r1 < r0; ++r1)
+              res =
+                std::none_of(
+                  std::begin(indices[r1]),
+                  std::end(indices[r1]),
+                  [&i](auto& j) {
+                    return i == j;
+                  });
+            return res;
+          });
+    return result;
   }
 
   std::string
