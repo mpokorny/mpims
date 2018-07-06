@@ -74,7 +74,7 @@ ReaderBase::init_traversal_partitions(
     // remaining buffer space; subject to the number of values being a multiple
     // of the number of elements in one period (or 1 if the axis is not
     // periodic)
-    auto blk_factor =  start_buffer->period_max_factor_size();
+    auto blk_factor = start_buffer->num_uniform_selection_elements();
     std::size_t len =
       ((max_buffer_length / start_buffer->array_length) / blk_factor)
       * blk_factor;
