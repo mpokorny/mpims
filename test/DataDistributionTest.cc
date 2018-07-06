@@ -16,8 +16,8 @@ TEST(DataDistribution, OrderValue) {
   EXPECT_EQ(cy->order(), group_size);
 
   const std::vector<std::vector<block_t> > all_blocks{
-    std::vector{block_t(0, 2), block_t(5, 3), block_t(12, 1)},
-      std::vector{block_t(2, 2), block_t(8, 3), block_t(13, 1)}};
+    std::vector<block_t>{{0, 2}, {5, 3}, {12, 1}, {14, 0}},
+      std::vector<block_t>{{2, 2}, {8, 3}, {13, 1}, {14, 0}}};
   auto bs =
     DataDistributionFactory::block_sequence(all_blocks, axis_length);
   EXPECT_EQ(bs->order(), all_blocks.size());
@@ -37,7 +37,7 @@ TEST(DataDistribution, AllBlocks) {
          i < axis_length;
          i += block_size * group_size) {
       auto sz = std::min(i + block_size, axis_length) - i;
-      blks.push_back(finite_block_t(i, sz));
+      blks.push_back({i, sz});
       size += sz;
     }
     EXPECT_EQ(dd->blocks(rank), blks);
@@ -118,7 +118,7 @@ TEST(DataDistribution, ApproximateUnboundedBlockIteration) {
 
   auto dd =
     DataDistributionFactory::block_sequence(
-      std::vector{ std::vector{ block_t{ 0, std::nullopt } } },
+      std::vector{ std::vector<block_t>{ {0, 1}, {1, 0} } },
       std::nullopt);
   const std::size_t limit = 100000;
   auto it = dd->begin(0);
@@ -227,28 +227,16 @@ TEST(DataDistribution, Periods) {
   EXPECT_EQ(up->period(), 1);
 
   const std::vector<std::vector<block_t> > all_blocks0{
-    std::vector{block_t(0, 2), block_t(5, 3), block_t(12, 1)},
-      std::vector{block_t(2, 2), block_t(8, 3), block_t(13, 1)}};
+    std::vector<block_t>{{0, 2}, {5, 3}, {12, 1}, {18, 0}},
+      std::vector<block_t>{{2, 2}, {8, 3}, {13, 1}, {18, 0}}};
   auto bs = DataDistributionFactory::block_sequence(all_blocks0, 1);
-  EXPECT_FALSE(bs->period());
-
-  const std::vector<std::vector<block_t> > all_blocks1{
-    std::vector{block_t(0, 2), block_t(5, 3), block_t(12, 1), block_t(18, 0)},
-      std::vector{block_t(2, 2), block_t(8, 3), block_t(13, 1), block_t(18, 0)}};
-  bs = DataDistributionFactory::block_sequence(all_blocks1, 1);
   EXPECT_EQ(bs->period(), 18);
 
-  const std::vector<std::vector<block_t> > all_blocks2{
-    std::vector{block_t(0, 2), block_t(5, 3), block_t(12, 1), block_t(18, 0)},
-      std::vector{block_t(2, 2), block_t(8, 3), block_t(13, 1)}};
-  bs = DataDistributionFactory::block_sequence(all_blocks2, 1);
-  EXPECT_FALSE(bs->period());
-
-  const std::vector<std::vector<block_t> > all_blocks3{
-    std::vector{block_t(0, 2), block_t(5, 3), block_t(12, 1), block_t(18, 0)},
-      std::vector{block_t(2, 2), block_t(8, 3), block_t(13, 1), block_t(14, 0)},
-        std::vector{block_t(2, 2), block_t(9, 0)}};
-  bs = DataDistributionFactory::block_sequence(all_blocks3, 1);
+  const std::vector<std::vector<block_t> > all_blocks1{
+    std::vector<block_t>{{0, 2}, {5, 3}, {12, 1}, {18, 0}},
+      std::vector<block_t>{{2, 2}, {8, 3}, {13, 1}, {14, 0}},
+        std::vector<block_t>{{2, 2}, {9, 0}}};
+  bs = DataDistributionFactory::block_sequence(all_blocks1, 1);
   EXPECT_EQ(bs->period(), std::lcm(std::lcm(18, 14), 9));
 }
 
