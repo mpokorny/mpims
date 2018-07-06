@@ -658,6 +658,16 @@ protected:
         MPI_Info_free(&info_used);
       }
 
+      if ((amode & MPI_MODE_RDWR) != 0
+          && !std::all_of(
+            std::begin(full_pgrid),
+            std::end(full_pgrid),
+            [&](auto& pg) {
+              auto ip = find_iter_params(iter_params, std::get<0>(pg));
+              return std::get<1>(pg)->disjoint_selections(ip->axis_length);
+            }))
+        MPI_File_set_atomicity(file, 1);
+
       // set the view here in order to associate a data representation with the
       // file handle
       MPI_File_set_view(
