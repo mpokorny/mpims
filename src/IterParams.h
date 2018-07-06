@@ -78,13 +78,8 @@ struct IterParams {
   }
 
   std::size_t
-  period_max_factor_size() const {
-    return
-      map(
-        period(),
-        [this](auto p) {
-          return begin()->take_while([&p](auto& i){ return i < p; }).size();
-        }).value_or(1);
+  num_uniform_selection_elements() const {
+    return data_distribution->num_uniform_selection_elements();
   }
 
   bool

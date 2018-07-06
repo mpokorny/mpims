@@ -185,6 +185,24 @@ public:
     return m_period;
   }
 
+  std::size_t
+  num_elements_per_period(std::size_t rank) const {
+    return
+      map(
+        m_period,
+        [this, &rank](auto p) {
+          return begin(rank)->take_while([&p](auto& i){return i < p;}).size();
+        }).value_or(1);
+  }
+
+  std::size_t
+  num_uniform_selection_elements() const {
+    std::size_t result = 1;
+    for (std::size_t rank = 0; rank < m_order; ++rank)
+      result = std::lcm(result, num_elements_per_period(rank));
+    return result;
+  }
+
   bool
   operator==(const DataDistribution& rhs) const {
     bool result = false;
