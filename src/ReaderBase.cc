@@ -192,8 +192,7 @@ ReaderBase::init_traversal_partitions(
               ip->max_size(),
               [ip](const auto& sz) { return sz <= ip->buffer_capacity; }).
             value_or(false);
-          if (!complete_coverage
-              && (ooo || !ip->selection_repeats_uniformly(comm)))
+          if (!complete_coverage && ooo)
             ifv= ip->axis;
         }
         ip->within_fileview = !ifv;
