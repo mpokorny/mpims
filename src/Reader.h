@@ -540,13 +540,14 @@ protected:
 
     // compute process grid size
 
-    std::size_t pgrid_size = 1;
-    std::for_each(
-      std::begin(traversal_order),
-      std::end(traversal_order),
-      [&pgrid_size, &full_pgrid] (const MSColumns& col) {
-        pgrid_size *= full_pgrid.at(col)->order();
-      });
+    std::size_t pgrid_size =
+      std::accumulate(
+        std::begin(traversal_order),
+        std::end(traversal_order),
+        1,
+        [&full_pgrid] (auto& acc, auto& col) {
+          return acc * full_pgrid.at(col)->order();
+        });
     int comm_size;
     MPI_Comm_size(comm, &comm_size);
     if (static_cast<std::size_t>(comm_size) < pgrid_size)
