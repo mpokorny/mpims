@@ -857,54 +857,58 @@ protected:
       // array, which requires that we use the hvector datatype
       auto result_dt = datatype(value_datatype);
       unsigned result_dt_count = 1;
-      std::for_each(
-        ms_shape.crbegin(),
-        ms_shape.crend(),
-        [&](auto& ax) {
-          auto ip = find_iter_params(iter_params, ax.id());
+      if (buffer_capacity > 0) {
+        std::for_each(
+          ms_shape.crbegin(),
+          ms_shape.crend(),
+          [&](auto& ax) {
+            auto ip = find_iter_params(iter_params, ax.id());
 
-          if (ip->buffer_capacity > 0 && result_dt_count > 1) {
-            auto dt = std::move(result_dt);
-            result_dt = datatype();
-            MPI_Type_contiguous(result_dt_count, *dt, result_dt.get());
-            result_dt_count = 1;
-          }
-
-          if (ip->fully_in_array || ip->buffer_capacity > 1) {
-
-            auto count =
-              (ip->fully_in_array ? ip->size().value() : buffer_capacity);
-            auto i0 = buffer_indexer->offset_of_(index).value();
-            ++index[ip->axis];
-            auto i1 = buffer_indexer->offset_of_(index).value();
-            --index[ip->axis];
-            if (debug_log) {
-              std::ostringstream oss;
-              oss << "(" << rank << ") "
-                  << mscol_nickname(ip->axis)
-                  << " dv stride " << i1 - i0
-                  << std::endl;
-              std::clog << oss.str();
-            }
-            auto stride = (i1 - i0) * value_size;
-            MPI_Aint lb = 0, extent = 0;
-            MPI_Type_get_extent(*result_dt, &lb, &extent);
-            if (stride == result_dt_count * static_cast<std::size_t>(extent)) {
-              result_dt_count *= count;
-            } else {
+            if (ip->buffer_capacity > 0 && result_dt_count > 1) {
               auto dt = std::move(result_dt);
               result_dt = datatype();
-              // use hvector to allow on-the-fly transpositions
-              MPI_Type_create_hvector(
-                count,
-                result_dt_count,
-                stride,
-                *dt,
-                result_dt.get());
+              MPI_Type_contiguous(result_dt_count, *dt, result_dt.get());
               result_dt_count = 1;
             }
-          }
-        });
+
+            if (ip->fully_in_array || ip->buffer_capacity > 1) {
+
+              auto count =
+                (ip->fully_in_array ? ip->size().value() : buffer_capacity);
+              auto i0 = buffer_indexer->offset_of_(index).value();
+              ++index[ip->axis];
+              auto i1 = buffer_indexer->offset_of_(index).value();
+              --index[ip->axis];
+              if (debug_log) {
+                std::ostringstream oss;
+                oss << "(" << rank << ") "
+                    << mscol_nickname(ip->axis)
+                    << " dv stride " << i1 - i0
+                    << std::endl;
+                std::clog << oss.str();
+              }
+              auto stride = (i1 - i0) * value_size;
+              MPI_Aint lb = 0, extent = 0;
+              MPI_Type_get_extent(*result_dt, &lb, &extent);
+              if (stride == result_dt_count * static_cast<std::size_t>(extent)) {
+                result_dt_count *= count;
+              } else {
+                auto dt = std::move(result_dt);
+                result_dt = datatype();
+                // use hvector to allow on-the-fly transpositions
+                MPI_Type_create_hvector(
+                  count,
+                  result_dt_count,
+                  stride,
+                  *dt,
+                  result_dt.get());
+                result_dt_count = 1;
+              }
+            }
+          });
+      } else {
+        result_dt_count = 0;
+      }
 
       if (debug_log) {
         MPI_Count size;
