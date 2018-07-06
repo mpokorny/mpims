@@ -71,13 +71,8 @@ ReaderBase::init_traversal_partitions(
   while (start_buffer != iter_params->rend()) {
     start_buffer->array_length = array_length;
     // len is the number of values along this axis that can be fit into the
-    // remaining buffer space; subject to the number of values being a multiple
-    // of the number of elements in one period (or 1 if the axis is not
-    // periodic)
-    auto blk_factor = start_buffer->num_uniform_selection_elements();
-    std::size_t len =
-      ((max_buffer_length / start_buffer->array_length) / blk_factor)
-      * blk_factor;
+    // remaining buffer space
+    std::size_t len = max_buffer_length / start_buffer->array_length;
     if (len == 0) {
       // unable to fit even the minimum number of values along this axis, so we
       // go back to the previous axis, then clear fully_in_array and set
