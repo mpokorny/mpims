@@ -26,7 +26,7 @@ public:
   }
 
   static GridDistribution
-  block_sequence(const std::vector<std::vector<block_t> >& all_blocks) {
+  block_sequence(const std::vector<std::vector<finite_block_t> >& all_blocks) {
 
     return [=](const std::optional<std::size_t>& len) {
       return DataDistributionFactory::block_sequence(all_blocks, len);

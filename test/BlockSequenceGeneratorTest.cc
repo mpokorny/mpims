@@ -8,27 +8,25 @@
 using namespace mpims;
 
 TEST(BlockSequenceGenerator, BlocksOverlap) {
-  const std::vector<block_t> good0{ block_t(0, 2), block_t(5, 3) };
-  const std::vector<block_t> good1{ block_t(2, 2), block_t(8, 3) };
-  const std::vector<block_t> bad0{ block_t(4, 2), block_t(5, 3) };
-  const std::vector<block_t> bad1{ block_t(4, std::nullopt), block_t(5, 3) };
+  const std::vector<finite_block_t> good0{ {0, 2}, {5, 3} };
+  const std::vector<finite_block_t> good1{ {2, 2}, {8, 3} };
+  const std::vector<finite_block_t> bad0{ {4, 2}, {5, 3} };
 
   auto states =
     BlockSequenceGenerator::initial_states(
-      std::vector{good0, good1, bad0, bad1},
+      std::vector{good0, good1, bad0},
       std::nullopt);
 
   EXPECT_NO_THROW(states(0));
   EXPECT_NO_THROW(states(1));
   EXPECT_THROW(states(2), std::domain_error);
-  EXPECT_THROW(states(3), std::domain_error);
 }
 
 TEST(BlockSequenceGenerator, SimpleSequence) {
 
-  const std::vector<std::vector<block_t> > all_blocks{
-    std::vector{block_t(0, 2), block_t(5, 3), block_t(12, 1)},
-      std::vector{block_t(2, 2), block_t(8, 3), block_t(13, 1)}};
+  const std::vector<std::vector<finite_block_t> > all_blocks{
+    std::vector<finite_block_t>{{0, 2}, {5, 3}, {12, 1}},
+      std::vector<finite_block_t>{{2, 2}, {8, 3}, {13, 1}}};
 
   auto states = BlockSequenceGenerator::initial_states(all_blocks, 14);
   for (std::size_t rank = 0; rank < all_blocks.size(); ++rank) {
@@ -49,9 +47,9 @@ TEST(BlockSequenceGenerator, SimpleSequence) {
 
 TEST(BlockSequenceGenerator, TruncatedSequence) {
 
-  const std::vector<std::vector<block_t> > all_blocks{
-    std::vector{block_t(0, 2), block_t(5, 3), block_t(12, 1)},
-      std::vector{block_t(2, 2), block_t(8, 3), block_t(13, 1)}};
+  const std::vector<std::vector<finite_block_t> > all_blocks{
+    std::vector<finite_block_t>{{0, 2}, {5, 3}, {12, 1}},
+      std::vector<finite_block_t>{{2, 2}, {8, 3}, {13, 1}}};
   const std::size_t axis_length = 7;
 
   auto states = BlockSequenceGenerator::initial_states(all_blocks, axis_length);
@@ -81,9 +79,9 @@ TEST(BlockSequenceGenerator, TruncatedSequence) {
 
 TEST(BlockSequenceGenerator, SimpleSequenceUnboundedAxis) {
 
-  const std::vector<std::vector<block_t> > all_blocks{
-    std::vector{block_t(0, 2), block_t(5, 3), block_t(12, 1)},
-      std::vector{block_t(2, 2), block_t(8, 3), block_t(13, 1)}};
+  const std::vector<std::vector<finite_block_t> > all_blocks{
+    std::vector<finite_block_t>{{0, 2}, {5, 3}, {12, 1}},
+      std::vector<finite_block_t>{{2, 2}, {8, 3}, {13, 1}}};
 
   auto states =
     BlockSequenceGenerator::initial_states(all_blocks, std::nullopt);
@@ -107,11 +105,7 @@ TEST(BlockSequenceGenerator, RepeatingSequenceBoundedAxis) {
 
   const std::size_t rep = 15;
   const std::size_t axreps = 3;
-  const std::vector<block_t> blocks{
-    block_t(0, 2),
-      block_t(5, 3),
-      block_t(12, 1),
-      block_t(rep, 0)};
+  const std::vector<finite_block_t> blocks{{0, 2}, {5, 3}, {12, 1}, {rep, 0}};
 
   auto st =
     BlockSequenceGenerator::initial_states(
@@ -126,7 +120,7 @@ TEST(BlockSequenceGenerator, RepeatingSequenceBoundedAxis) {
         auto rblk =
           std::make_tuple(
             std::get<0>(blocks[i]) + n * rep,
-            std::get<1>(blocks[i]).value());
+            std::get<1>(blocks[i]));
         EXPECT_EQ(blk.value(), rblk);
       }
     }
@@ -138,11 +132,7 @@ TEST(BlockSequenceGenerator, TruncatedRepeatingSequence) {
 
   const std::size_t rep = 15;
   const std::size_t axreps = 3;
-  const std::vector<block_t> blocks{
-    block_t(0, 2),
-      block_t(5, 3),
-      block_t(12, 1),
-      block_t(rep, 0)};
+  const std::vector<finite_block_t> blocks{{0, 2}, {5, 3}, {12, 1}, {rep, 0}};
   const std::size_t len = axreps * rep - 9;
 
   auto st = BlockSequenceGenerator::initial_states(std::vector{blocks}, len)(0);
@@ -154,7 +144,7 @@ TEST(BlockSequenceGenerator, TruncatedRepeatingSequence) {
       block_t rblk =
         std::make_tuple(
           std::get<0>(blocks[i]) + n * rep,
-          std::get<1>(blocks[i]).value());
+          std::get<1>(blocks[i]));
       EXPECT_EQ(blk.value(), rblk);
     }
   std::tie(st, blk) = BlockSequenceGenerator::apply(st);
@@ -162,7 +152,7 @@ TEST(BlockSequenceGenerator, TruncatedRepeatingSequence) {
   block_t rblk =
     std::make_tuple(
       std::get<0>(blocks[0]) + (axreps - 1) * rep,
-      std::get<1>(blocks[0]).value());
+      std::get<1>(blocks[0]));
   EXPECT_EQ(blk.value(), rblk);
   std::tie(st, blk) = BlockSequenceGenerator::apply(st);
   ASSERT_TRUE(blk);
@@ -176,11 +166,7 @@ TEST(BlockSequenceGenerator, TruncatedRepeatingSequence) {
 
 TEST(BlockSequenceGenerator, ApproxRepeatingSequenceUnbounded) {
   const std::size_t rep = 15;
-  const std::vector<block_t> blocks{
-    block_t(0, 2),
-      block_t(5, 3),
-      block_t(12, 1),
-      block_t(rep, 0)};
+  const std::vector<finite_block_t> blocks{{0, 2}, {5, 3}, {12, 1}, {rep, 0}};
 
   auto st =
     BlockSequenceGenerator::initial_states(
@@ -195,7 +181,7 @@ TEST(BlockSequenceGenerator, ApproxRepeatingSequenceUnbounded) {
     block_t rblk =
       std::make_tuple(
         std::get<0>(blocks[bi]) + n * rep,
-        std::get<1>(blocks[bi]).value());
+        std::get<1>(blocks[bi]));
     ASSERT_EQ(blk.value(), rblk);
 
     ++bi;
@@ -213,12 +199,12 @@ TEST(BlockSequenceGenerator, RepeatingSequenceExcess) {
 
   const std::size_t rep = 15;
   const std::size_t axreps = 3;
-  const std::vector<block_t> blocks{
-    block_t(0, 2),
-      block_t(5, 3),
-      block_t(12, 1),
-      block_t(rep, 0),
-      block_t(rep + 2, 2)};
+  const std::vector<finite_block_t> blocks{
+    {0, 2},
+      {5, 3},
+      {12, 1},
+      {rep, 0},
+      {rep + 2, 2}};
 
   auto st =
     BlockSequenceGenerator::initial_states(
@@ -233,7 +219,7 @@ TEST(BlockSequenceGenerator, RepeatingSequenceExcess) {
         auto rblk =
           std::make_tuple(
             std::get<0>(blocks[i]) + n * rep,
-            std::get<1>(blocks[i]).value());
+            std::get<1>(blocks[i]));
         EXPECT_EQ(blk.value(), rblk);
       }
     }

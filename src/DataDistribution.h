@@ -17,8 +17,6 @@
 
 namespace mpims {
 
-typedef std::tuple<std::size_t, std::size_t> finite_block_t;
-
 // blocks()
 //
 // create vector of blocks from iterator over indices
@@ -488,7 +486,7 @@ public:
   //
   static std::shared_ptr<const DataDistribution>
   block_sequence(
-    const std::vector<std::vector<block_t> >& all_blocks,
+    const std::vector<std::vector<finite_block_t> >& all_blocks,
     const std::optional<std::size_t>& axis_length) {
 
     if (std::any_of(

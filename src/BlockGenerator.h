@@ -15,6 +15,8 @@ namespace mpims {
 
 typedef std::tuple<std::size_t, std::optional<std::size_t> > block_t;
 
+typedef std::tuple<std::size_t, std::size_t> finite_block_t;
+
 // CyclicGenerator
 //
 // generator for cyclic distribution of index blocks
@@ -85,7 +87,7 @@ class BlockSequenceGenerator {
 public:
 
   struct State {
-    std::vector<block_t> blocks;
+    std::vector<finite_block_t> blocks;
     std::optional<std::size_t> axis_length;
     std::size_t block_index;
     std::size_t block_offset;
@@ -93,7 +95,7 @@ public:
 
   static auto
   is_unbounded(
-    const std::vector<std::vector<block_t> >& all_blocks,
+    const std::vector<std::vector<finite_block_t> >& all_blocks,
     const std::optional<std::size_t>& axis_length) {
 
     if (axis_length)
@@ -109,13 +111,7 @@ public:
             [](auto& b) { return std::get<1>(b) == 0; });
 
         if (!axis_length) {
-          if (brep == std::end(blocks)) {
-            std::optional<std::size_t> blen;
-            std::tie(std::ignore, blen) = blocks[blocks.size() - 1];
-            result = result || !blen;
-          } else {
-            result = true;
-          }
+          result = result || brep != std::end(blocks);
         }
       }
     }
@@ -124,7 +120,7 @@ public:
 
   static auto
   initial_states(
-    const std::vector<std::vector<block_t> >& all_blocks,
+    const std::vector<std::vector<finite_block_t> >& all_blocks,
     const std::optional<std::size_t>& axis_length) {
 
     return [=](std::size_t rank) {
@@ -133,15 +129,13 @@ public:
 
       auto blocks = &all_blocks[rank];
 
-      block_t prev = (*blocks)[0];
+      finite_block_t prev = (*blocks)[0];
       for (std::size_t i = 1; i < blocks->size(); ++i) {
-        std::size_t p0;
-        std::optional<std::size_t> plen;
+        std::size_t p0, plen;
         std::tie(p0, plen) = prev;
-        std::optional<std::size_t> prev_end =
-          (plen ? (p0 + plen.value()) : plen);
-        block_t cur = (*blocks)[i];
-        if (!prev_end || std::get<0>(cur) < prev_end.value())
+        std::size_t prev_end = p0 + plen;
+        finite_block_t cur = (*blocks)[i];
+        if (std::get<0>(cur) < prev_end)
           throw std::domain_error("overlapping blocks");
         prev = cur;
       }
@@ -154,22 +148,25 @@ public:
 
       auto alen = axis_length;
       if (!alen && brep == std::end(*blocks) && blocks->size() > 0) {
-        std::size_t b0;
-        std::optional<std::size_t> blen;
+        std::size_t b0, blen;
         std::tie(b0, blen) = (*blocks)[blocks->size() - 1];
-        alen = (blen ? (b0 + blen.value()) : blen);
+        alen = b0 + blen;
       };
 
       if (brep != std::end(*blocks))
         ++brep;
 
       return
-        State{std::vector<block_t>(std::begin(*blocks), brep), alen, 0, 0};
+        State{
+          std::vector<finite_block_t>(std::begin(*blocks), brep),
+          alen,
+          0,
+          0};
     };
   }
 
   static std::optional<std::size_t>
-  period(const std::vector<std::vector<block_t> >& all_blocks) {
+  period(const std::vector<std::vector<finite_block_t> >& all_blocks) {
 
     std::vector<std::size_t > ps;
     std::for_each(
@@ -202,24 +199,18 @@ public:
     if (st.block_index >= st.blocks.size())
       return std::make_tuple(st, std::nullopt);
 
-    std::size_t b0;
-    std::optional<std::size_t> blen;
+    std::size_t b0, blen;
     std::tie(b0, blen) = st.blocks[st.block_index];
     b0 += st.block_offset;
     if (st.axis_length && b0 >= st.axis_length.value())
       return std::make_tuple(st, std::nullopt);
 
-    if (st.axis_length) {
-      if (blen)
-        blen = std::min(b0 + blen.value(), st.axis_length.value()) - b0;
-      else
-        blen = st.axis_length.value() - b0;
-    }
+    if (st.axis_length)
+      blen = std::min(b0 + blen, st.axis_length.value()) - b0;
     auto next_blk = st.block_index + 1;
     auto next_blk_offset = st.block_offset;
     if (next_blk < st.blocks.size()) {
-      std::size_t next_b0;
-      std::optional<std::size_t> next_blen;
+      std::size_t next_b0, next_blen;
       std::tie(next_b0, next_blen) = st.blocks[next_blk];
       if (next_blen == 0) {
         next_blk_offset += next_b0;

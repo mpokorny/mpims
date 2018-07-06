@@ -15,9 +15,9 @@ TEST(DataDistribution, OrderValue) {
     DataDistributionFactory::cyclic(block_size, group_size, axis_length);
   EXPECT_EQ(cy->order(), group_size);
 
-  const std::vector<std::vector<block_t> > all_blocks{
-    std::vector<block_t>{{0, 2}, {5, 3}, {12, 1}, {14, 0}},
-      std::vector<block_t>{{2, 2}, {8, 3}, {13, 1}, {14, 0}}};
+  const std::vector<std::vector<finite_block_t> > all_blocks{
+    std::vector<finite_block_t>{{0, 2}, {5, 3}, {12, 1}, {14, 0}},
+      std::vector<finite_block_t>{{2, 2}, {8, 3}, {13, 1}, {14, 0}}};
   auto bs =
     DataDistributionFactory::block_sequence(all_blocks, axis_length);
   EXPECT_EQ(bs->order(), all_blocks.size());
@@ -118,7 +118,7 @@ TEST(DataDistribution, ApproximateUnboundedBlockIteration) {
 
   auto dd =
     DataDistributionFactory::block_sequence(
-      std::vector{ std::vector<block_t>{ {0, 1}, {1, 0} } },
+      std::vector{ std::vector<finite_block_t>{ {0, 1}, {1, 0} } },
       std::nullopt);
   const std::size_t limit = 100000;
   auto it = dd->begin(0);
@@ -226,16 +226,16 @@ TEST(DataDistribution, Periods) {
   up = DataDistributionFactory::unpartitioned(83);
   EXPECT_EQ(up->period(), 1);
 
-  const std::vector<std::vector<block_t> > all_blocks0{
-    std::vector<block_t>{{0, 2}, {5, 3}, {12, 1}, {18, 0}},
-      std::vector<block_t>{{2, 2}, {8, 3}, {13, 1}, {18, 0}}};
+  const std::vector<std::vector<finite_block_t> > all_blocks0{
+    std::vector<finite_block_t>{{0, 2}, {5, 3}, {12, 1}, {18, 0}},
+      std::vector<finite_block_t>{{2, 2}, {8, 3}, {13, 1}, {18, 0}}};
   auto bs = DataDistributionFactory::block_sequence(all_blocks0, 1);
   EXPECT_EQ(bs->period(), 18);
 
-  const std::vector<std::vector<block_t> > all_blocks1{
-    std::vector<block_t>{{0, 2}, {5, 3}, {12, 1}, {18, 0}},
-      std::vector<block_t>{{2, 2}, {8, 3}, {13, 1}, {14, 0}},
-        std::vector<block_t>{{2, 2}, {9, 0}}};
+  const std::vector<std::vector<finite_block_t> > all_blocks1{
+    std::vector<finite_block_t>{{0, 2}, {5, 3}, {12, 1}, {18, 0}},
+      std::vector<finite_block_t>{{2, 2}, {8, 3}, {13, 1}, {14, 0}},
+        std::vector<finite_block_t>{{2, 2}, {9, 0}}};
   bs = DataDistributionFactory::block_sequence(all_blocks1, 1);
   EXPECT_EQ(bs->period(), std::lcm(std::lcm(18, 14), 9));
 }
