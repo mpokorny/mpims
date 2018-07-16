@@ -33,14 +33,6 @@ TEST(UnpartitionedGenerator, TotalSequence) {
   EXPECT_FALSE(blk);
 }
 
-int
-main(int argc, char *argv[]) {
-
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-
-}
-
 // Local Variables:
 // mode: c++
 // c-basic-offset: 2

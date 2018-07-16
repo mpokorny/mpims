@@ -134,14 +134,6 @@ TEST(CyclicGenerator, ApproxUnboundedCycle) {
   }
 }
 
-int
-main(int argc, char *argv[]) {
-
-  ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
-
-}
-
 // Local Variables:
 // mode: c++
 // c-basic-offset: 2

@@ -2,8 +2,6 @@ find_package(MPI REQUIRED)
 
 include_directories(
   ${INCLUDE_DIRECTORIES} "../src")
-link_libraries(
-  ${LINK_LIBRARIES} GTest::GTest)
 
 add_executable(
   CyclicGeneratorTest
@@ -11,6 +9,9 @@ add_executable(
 target_compile_options(
   CyclicGeneratorTest PUBLIC
   ${GTEST_CFLAGS_OTHER})
+target_link_libraries(
+  CyclicGeneratorTest
+  GTest::Main)
 
 add_executable(
   BlockSequenceGeneratorTest
@@ -18,6 +19,9 @@ add_executable(
 target_compile_options(
   BlockSequenceGeneratorTest PUBLIC
   ${GTEST_CFLAGS_OTHER})
+target_link_libraries(
+  BlockSequenceGeneratorTest
+  GTest::Main)
 
 add_executable(
   UnpartitionedGeneratorTest
@@ -25,6 +29,9 @@ add_executable(
 target_compile_options(
   UnpartitionedGeneratorTest PUBLIC
   ${GTEST_CFLAGS_OTHER})
+target_link_libraries(
+  UnpartitionedGeneratorTest
+  GTest::Main)
 
 add_executable(
   DataDistributionTest
@@ -35,6 +42,9 @@ target_include_directories(
 target_compile_options(
   DataDistributionTest PUBLIC
   ${GTEST_CFLAGS_OTHER})
+target_link_libraries(
+  DataDistributionTest
+  GTest::Main)
 
 gtest_discover_tests(CyclicGeneratorTest)
 gtest_discover_tests(BlockSequenceGeneratorTest)
