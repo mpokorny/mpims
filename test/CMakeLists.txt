@@ -46,7 +46,30 @@ target_link_libraries(
   DataDistributionTest
   GTest::Main)
 
+add_executable(
+  ReadArrayTest
+  ReadArrayTest.cc)
+target_include_directories(
+  ReadArrayTest PRIVATE
+  ${MPI_CXX_INCLUDE_PATH})
+target_compile_options(
+  ReadArrayTest PUBLIC
+  ${GTEST_CFLAGS_OTHER})
+target_link_libraries(
+  ReadArrayTest
+  mpims
+  ${MPI_CXX_LIBRARIES}
+  GTest::GTest
+  stdc++fs)
+
 gtest_discover_tests(CyclicGeneratorTest)
 gtest_discover_tests(BlockSequenceGeneratorTest)
 gtest_discover_tests(UnpartitionedGeneratorTest)
 gtest_discover_tests(DataDistributionTest)
+
+add_test(
+  NAME ParallelReadArrayTest
+  COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS}
+  ${MPIEXEC_PREFLAGS}
+  $<TARGET_FILE_DIR:ReadArrayTest>/$<TARGET_FILE_NAME:ReadArrayTest>
+  ${MPIEXEC_POSTFLAGS})
