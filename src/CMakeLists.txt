@@ -50,6 +50,7 @@ install(FILES
   AxisIter.h
   ColumnAxis.h
   DataDistribution.h
+  GridDistribution.h
   IndexBlock.h
   IterParams.h
   mpims.h

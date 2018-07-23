@@ -1,4 +1,3 @@
-/* -*- mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; -*- */
 #ifndef MS_COLUMNS_H_
 #define MS_COLUMNS_H_
 
@@ -26,3 +25,11 @@ mscol(const std::string& nick);
 } // end namespace mpims
 
 #endif // MS_COLUMNS_H_
+
+// Local Variables:
+// mode: c++
+// c-basic-offset: 2
+// fill-column: 80
+// indent-tabs-mode: nil
+// coding: utf-8
+// End:

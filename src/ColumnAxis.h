@@ -1,4 +1,3 @@
-/* -*- mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; -*- */
 #ifndef COLUMN_AXIS_H_
 #define COLUMN_AXIS_H_
 
@@ -80,3 +79,11 @@ public:
 } // end namespace mpims
 
 #endif // COLUMN_AXIS_H_
+
+// Local Variables:
+// mode: c++
+// c-basic-offset: 2
+// fill-column: 80
+// indent-tabs-mode: nil
+// coding: utf-8
+// End:

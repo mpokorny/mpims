@@ -1,4 +1,3 @@
-/* -*- mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; -*- */
 #ifndef ARRAY_INDEXER_H_
 #define ARRAY_INDEXER_H_
 
@@ -108,6 +107,16 @@ public:
 
     if (!is_valid_index(ix))
       throw std::domain_error("Invalid index axes");
+
+    if (
+      std::any_of(
+        std::begin(m_axes),
+        std::end(m_axes),
+        [&ix](auto& ax) {
+          auto len = ax.length();
+          return len && ix.at(ax.id()) >= len.value();
+        }))
+      throw std::out_of_range("Index out of range");
 
     return offset_of_(ix);
   }
@@ -220,3 +229,11 @@ private:
 } // end namespace mpims
 
 #endif // ARRAY_INDEXER_H_
+
+// Local Variables:
+// mode: c++
+// c-basic-offset: 2
+// fill-column: 80
+// indent-tabs-mode: nil
+// coding: utf-8
+// End:
