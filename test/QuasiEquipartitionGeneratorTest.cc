@@ -27,13 +27,15 @@ TEST(QuasiEquipartitionGenerator, Blocks) {
       auto st = sts(rank);
       std::optional<block_t> oblk;
       std::tie(st, oblk) = QuasiEquipartitionGenerator::apply(st);
-      EXPECT_FALSE(st);
       ASSERT_TRUE(oblk);
       std::size_t b0;
       std::optional<std::size_t> blen;
       std::tie(b0, blen) = oblk.value();
       ASSERT_TRUE(blen);
       blocks.emplace_back(finite_block_t{b0, blen.value()});
+
+      std::tie(st, oblk) = QuasiEquipartitionGenerator::apply(st);
+      EXPECT_FALSE(oblk);
     }
     // check for disjoint blocks, find min block offset, and compute block size
     // distribution
