@@ -252,6 +252,32 @@ public:
 
 };
 
+class QuasiEquipartitionGenerator {
+
+public:
+
+  typedef std::optional<finite_block_t> State;
+
+  static auto
+  initial_states(std::size_t order, std::size_t axis_length) {
+
+    std::size_t min_block = axis_length / order;
+    std::size_t excess = axis_length % order;
+
+    return [=](std::size_t rank) {
+      return std::make_optional(
+        finite_block_t{
+          min_block * rank + std::min(rank, excess),
+          min_block + ((rank < excess) ? 1 : 0)});
+    };
+  }
+
+  static std::tuple<State, std::optional<block_t> >
+  apply(const State& st) {
+    return std::make_tuple(std::nullopt, st);
+  }
+};
+
 }
 
 #endif // BLOCK_GENERATOR_H_

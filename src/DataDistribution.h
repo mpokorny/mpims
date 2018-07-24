@@ -560,6 +560,16 @@ public:
       !axis_length);
   }
 
+  static std::shared_ptr<const DataDistribution>
+  quasiequipartitioned(std::size_t order, std::size_t axis_length) {
+    return GeneratorDataDistribution<QuasiEquipartitionGenerator::State>::make(
+      QuasiEquipartitionGenerator::apply,
+      QuasiEquipartitionGenerator::initial_states(order, axis_length),
+      std::nullopt,
+      order,
+      false);
+  }
+
   // generic data distribution factory method
   //
   template <typename S>

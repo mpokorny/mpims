@@ -34,6 +34,16 @@ target_link_libraries(
   GTest::Main)
 
 add_executable(
+  QuasiEquipartitionGeneratorTest
+  QuasiEquipartitionGeneratorTest.cc)
+target_compile_options(
+  QuasiEquipartitionGeneratorTest PUBLIC
+  ${GTEST_CFLAGS_OTHER})
+target_link_libraries(
+  QuasiEquipartitionGeneratorTest
+  GTest::Main)
+
+add_executable(
   DataDistributionTest
   DataDistributionTest.cc)
 target_include_directories(
@@ -65,6 +75,7 @@ target_link_libraries(
 gtest_discover_tests(CyclicGeneratorTest)
 gtest_discover_tests(BlockSequenceGeneratorTest)
 gtest_discover_tests(UnpartitionedGeneratorTest)
+gtest_discover_tests(QuasiEquipartitionGeneratorTest)
 gtest_discover_tests(DataDistributionTest)
 
 add_test(
