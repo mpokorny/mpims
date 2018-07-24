@@ -34,6 +34,23 @@ public:
   }
 
   static GridDistribution
+  quasiequipartitioned(std::size_t order) {
+
+    return [=](const std::optional<std::size_t>& len) {
+      // note if len is empty, we can't use a QuasiEquipartitionGenerator, so we
+      // use a CyclicGenerator with a block length of one instead (not sure
+      // whether this is better than throwing an exception, but the resulting
+      // distribution at least has somewhat similar properties)
+      if (len)
+        return DataDistributionFactory::quasiequipartitioned(
+          order,
+          len.value());
+      else
+        return DataDistributionFactory::cyclic(1, order, len);
+    };
+  }
+
+  static GridDistribution
   unpartitioned() {
 
     return [=](const std::optional<std::size_t>& len) {
